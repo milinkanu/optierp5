@@ -6,7 +6,7 @@ from hashlib import sha256
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Body
 from pydantic import UUID4
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -142,7 +142,7 @@ def signup(payload: SignUpRequest, db: Session = Depends(get_db_session)) -> Aut
         email=normalize_email(payload.user.email),
         password_hash=hash_password(payload.user.password),
         name=payload.user.name,
-        email_verified=False,
+        email_verified=True,  # Auto-verified for dev
         verification_token_hash=hash_token(verification_token),
         verification_token_expires_at=datetime.utcnow() + timedelta(hours=24),
     )
@@ -238,7 +238,7 @@ def refresh_token(payload: RefreshTokenRequest, db: Session = Depends(get_db_ses
 
 
 @router.post("/logout")
-def logout(payload: RefreshTokenRequest | None = None, current_context: TenantContext = Depends(get_current_context), db: Session = Depends(get_db_session)) -> dict[str, str]:
+def logout(payload: RefreshTokenRequest | None = Body(None), current_context: TenantContext = Depends(get_current_context), db: Session = Depends(get_db_session)) -> dict[str, str]:
     if payload and payload.refresh_token:
         revoke_refresh_token(db, payload.refresh_token)
     else:

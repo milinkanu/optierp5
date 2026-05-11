@@ -1,0 +1,35 @@
+INFO:     Will watch for changes in these directories: ["/home/sarfraj/Desktop/projects/milin's project/optierp/optierp5/erp-backend"]
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [73280] using WatchFiles
+INFO:     Started server process [73282]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+[AUTH EMAIL] to=final@example.com subject=Verify your FinOps email
+Verify your email: http://localhost:5173/auth/verify-email?token=r4o9JXbAkmVmgR1JvyeGy9Rw34-pQv3MUFA2YIMnENA
+
+INFO:     127.0.0.1:50984 - "POST /auth/signup HTTP/1.1" 201 Created
+INFO:     127.0.0.1:50984 - "GET /auth/me HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'models/auth.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [73282]
+INFO:     Started server process [73785]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'utils/auth.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [73785]
+INFO:     Started server process [73823]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'utils/db.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [73823]
+INFO:     Started server process [73900]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 from typing import Generator
 
 from sqlalchemy import create_engine

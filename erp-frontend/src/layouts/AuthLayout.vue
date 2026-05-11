@@ -1,7 +1,7 @@
 <template>
   <div class="auth-shell">
     <div class="auth-card">
-      <slot />
+      <router-view />
     </div>
   </div>
 </template>

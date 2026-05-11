@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta
+from dotenv import load_dotenv
+from datetime import datetime, timedelta, timezone
+
+# Load environment variables
+load_dotenv()
 from typing import List
 from uuid import UUID
 
@@ -11,7 +15,7 @@ from pydantic import BaseModel, UUID4
 
 JWT_SECRET = os.getenv("JWT_SECRET", "YOUR_JWT_SECRET")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-JWT_ACCESS_TOKEN_EXPIRES_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES_MINUTES", "15"))
+JWT_ACCESS_TOKEN_EXPIRES_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES_MINUTES", os.getenv("JWT_EXPIRATION_MINUTES", "15")))
 JWT_REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "30"))
 
 # Backward compatibility
@@ -37,7 +41,7 @@ class TokenPayload(BaseModel):
 
 
 def create_access_token(subject: str, company_id: UUID4, user_version: int, roles: List[str], delegations: List[dict]) -> str:
-    expire = datetime.utcnow() + timedelta(minutes=JWT_ACCESS_TOKEN_EXPIRES_MINUTES)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=JWT_ACCESS_TOKEN_EXPIRES_MINUTES)
     payload = {
         "sub": subject,
         "company_id": str(company_id),
@@ -54,6 +58,7 @@ def verify_jwt_token(token: str) -> TokenPayload:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return TokenPayload(**payload)
     except JWTError as exc:
+        print(f"JWT Verification failed: {str(exc)}")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials") from exc
 
 

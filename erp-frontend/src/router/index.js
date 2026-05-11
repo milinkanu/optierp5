@@ -27,6 +27,14 @@ const routes = [
     meta: { requiresAuth: true },
     children: [{ path: '', name: 'Dashboard', component: DashboardView }],
   },
+  {
+    path: '/index.html',
+    redirect: '/',
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    redirect: { name: 'Login' },
+  },
 ]
 
 const router = createRouter({
