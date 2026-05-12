@@ -11,7 +11,7 @@
       </div>
       <div class="welcome-right">
         <div class="helpline">
-          <span>optierp Helpline: <strong>18003093036</strong></span>
+          <span>OptiERP Helpline: <strong>18003093036</strong></span>
           <p>Mon - Fri • 9:00 AM - 7:00 PM • Toll Free</p>
         </div>
       </div>

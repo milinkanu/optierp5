@@ -8,7 +8,7 @@
             <rect x="2" y="2" width="20" height="20" rx="4" fill="#1e88e5"/>
             <path d="M7 12H17M7 8H17M7 16H13" stroke="white" stroke-width="2" stroke-linecap="round"/>
           </svg>
-          <span v-if="!isCollapsed">optierp</span>
+          <span v-if="!isCollapsed">OptiERP</span>
         </div>
         <button class="collapse-btn" @click="isCollapsed = !isCollapsed">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -119,11 +119,6 @@
         </router-link>
       </nav>
 
-      <div class="sidebar-footer" v-if="!isCollapsed">
-        <div class="apps-label">APPS</div>
-        <div class="nav-item small">Zoho Payroll</div>
-        <div class="nav-item small">Zoho Payments</div>
-      </div>
     </aside>
 
     <!-- Main Area -->
@@ -308,22 +303,7 @@ const logout = async () => {
   background: rgba(255, 255, 255, 0.05);
 }
 
-.sidebar-footer {
-  padding: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-}
 
-.apps-label {
-  font-size: 0.7rem;
-  font-weight: 700;
-  margin-bottom: 8px;
-  opacity: 0.5;
-}
-
-.nav-item.small {
-  padding: 6px 0;
-  font-size: 0.8rem;
-}
 
 /* Main Area */
 .zoho-main {
