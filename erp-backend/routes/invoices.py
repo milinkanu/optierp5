@@ -2,8 +2,9 @@ from datetime import datetime
 from uuid import UUID, uuid4
 import json
 import os
+import io
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from sqlalchemy import text
 from decimal import Decimal
 
@@ -234,7 +235,7 @@ async def post_invoice(
 ):
     with engine.begin() as conn:
         invoice = conn.execute(
-            text('SELECT invoice_id, invoice_number, invoice_type, invoice_grand_total, paid_amount, balance_due, status FROM invoices WHERE invoice_id = :invoice_id AND company_id = :company_id'),
+            text('SELECT invoice_id, invoice_number, invoice_type, invoice_grand_total, paid_amount, balance_due, status FROM invoices WHERE invoice_id = :invoice_id AND company_id = :company_id AND is_deleted = FALSE'),
             {'invoice_id': str(invoice_id), 'company_id': str(current_context.company_id)}
         ).fetchone()
         if invoice is None:
@@ -249,13 +250,123 @@ async def post_invoice(
         )
 
         updated_invoice = conn.execute(
-            text('SELECT invoice_id, invoice_number, invoice_type, invoice_grand_total, paid_amount, balance_due, status, created_at FROM invoices WHERE invoice_id = :invoice_id'),
+            text('SELECT invoice_id, invoice_number, invoice_type, invoice_grand_total, paid_amount, balance_due, status, created_at FROM invoices WHERE invoice_id = :invoice_id AND is_deleted = FALSE'),
             {'invoice_id': str(invoice_id)}
         ).fetchone()
         if updated_invoice is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Invoice not found after posting')
         invoice_dict = dict(updated_invoice._mapping) if hasattr(updated_invoice, '_mapping') else dict(updated_invoice)
         return InvoiceResponse(**invoice_dict)
+
+
+@router.get("", response_model=list[InvoiceResponse])
+async def list_invoices(
+    current_context: TenantContext = Depends(get_current_context),
+    page: int = 1,
+    limit: int = 25,
+    invoice_type: str | None = None,
+):
+    offset = (page - 1) * limit
+    with engine.begin() as conn:
+        params: dict = {"company_id": str(current_context.company_id), "limit": limit, "offset": offset}
+        where = "company_id = :company_id AND is_deleted = FALSE"
+        if invoice_type:
+            where += " AND invoice_type = :invoice_type"
+            params["invoice_type"] = invoice_type
+
+        rows = conn.execute(
+            text(
+                f"SELECT invoice_id, invoice_number, invoice_type, status, invoice_grand_total, paid_amount, balance_due, created_at "
+                f"FROM invoices WHERE {where} ORDER BY created_at DESC LIMIT :limit OFFSET :offset"
+            ),
+            params,
+        ).fetchall()
+        result = []
+        for r in rows:
+            d = dict(r._mapping) if hasattr(r, "_mapping") else dict(r)
+            result.append(InvoiceResponse(**d))
+        return result
+
+
+@router.get("/{invoice_id}", response_model=InvoiceResponse)
+async def get_invoice(invoice_id: UUID, current_context: TenantContext = Depends(get_current_context)):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                "SELECT invoice_id, invoice_number, invoice_type, status, invoice_grand_total, paid_amount, balance_due, created_at "
+                "FROM invoices WHERE invoice_id = :invoice_id AND company_id = :company_id AND is_deleted = FALSE"
+            ),
+            {"invoice_id": str(invoice_id), "company_id": str(current_context.company_id)},
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
+        d = dict(row._mapping) if hasattr(row, "_mapping") else dict(row)
+        return InvoiceResponse(**d)
+
+
+@router.delete("/{invoice_id}")
+async def delete_invoice(invoice_id: UUID, current_context: TenantContext = Depends(get_current_context)):
+    with engine.begin() as conn:
+        updated = conn.execute(
+            text(
+                "UPDATE invoices SET is_deleted = TRUE, updated_at = :updated_at "
+                "WHERE invoice_id = :invoice_id AND company_id = :company_id AND is_deleted = FALSE"
+            ),
+            {"invoice_id": str(invoice_id), "company_id": str(current_context.company_id), "updated_at": datetime.utcnow()},
+        ).rowcount
+        if updated == 0:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
+    return {"success": True}
+
+
+def _minimal_invoice_pdf(invoice_number: str) -> bytes:
+    # Minimal valid PDF with a single line of text. No external dependencies.
+    text_line = f"Invoice {invoice_number}"
+    content = f"BT /F1 18 Tf 72 720 Td ({text_line}) Tj ET"
+    objects: list[bytes] = []
+    objects.append(b"1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj\n")
+    objects.append(b"2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj\n")
+    objects.append(b"3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources<< /Font<< /F1 5 0 R >> >> >>endobj\n")
+    stream = content.encode("latin-1", errors="replace")
+    objects.append(f"4 0 obj<< /Length {len(stream)} >>stream\n".encode("ascii") + stream + b"\nendstream\nendobj\n")
+    objects.append(b"5 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>endobj\n")
+
+    out = io.BytesIO()
+    out.write(b"%PDF-1.4\n")
+    xref_positions = [0]
+    for obj in objects:
+        xref_positions.append(out.tell())
+        out.write(obj)
+        out.write(b"\n")
+
+    xref_start = out.tell()
+    out.write(f"xref\n0 {len(objects)+1}\n".encode("ascii"))
+    out.write(b"0000000000 65535 f \n")
+    for pos in xref_positions[1:]:
+        out.write(f"{pos:010d} 00000 n \n".encode("ascii"))
+    out.write(
+        f"trailer<< /Size {len(objects)+1} /Root 1 0 R >>\nstartxref\n{xref_start}\n%%EOF".encode("ascii")
+    )
+    return out.getvalue()
+
+
+@router.get("/{invoice_id}/pdf")
+async def get_invoice_pdf(invoice_id: UUID, current_context: TenantContext = Depends(get_current_context)):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                "SELECT invoice_number FROM invoices "
+                "WHERE invoice_id = :invoice_id AND company_id = :company_id AND is_deleted = FALSE"
+            ),
+            {"invoice_id": str(invoice_id), "company_id": str(current_context.company_id)},
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
+        invoice_number = (dict(row._mapping) if hasattr(row, "_mapping") else dict(row))["invoice_number"]
+
+    pdf_bytes = _minimal_invoice_pdf(invoice_number)
+    headers = {"Content-Disposition": f'inline; filename="{invoice_number}.pdf"'}
+    return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
 
 
 @router.post("/{invoice_id}/payments", response_model=InvoiceResponse)

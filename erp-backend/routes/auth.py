@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from hashlib import sha256
 from typing import Any
 from uuid import uuid4
+from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Body
 from pydantic import UUID4
@@ -21,6 +22,7 @@ from models.auth import (
     UserResponse,
 )
 from models.db_models import AuditLog, Company, RefreshToken, Role, User, UserRole
+from services.coa_seed import seed_default_chart_of_accounts
 from utils.auth import JWT_REFRESH_TOKEN_EXPIRE_DAYS, TenantContext, create_access_token, get_current_context
 from utils.db import get_db_session
 from utils.email import build_password_reset_url, build_verification_url, send_email
@@ -185,19 +187,26 @@ def signup(payload: SignUpRequest, db: Session = Depends(get_db_session)) -> Aut
     db.flush()
 
     db.add(UserRole(user_id=user.user_id, role_id=owner_role.role_id))
+    seed_default_chart_of_accounts(db, cast(Any, company).company_id)
     db.commit()
 
     send_email(
-        recipient=user.email,
+        recipient=str(cast(Any, user).email),
         subject="Verify your FinOps email",
         body=f"Verify your email: {build_verification_url(verification_token)}",
     )
-    log_auth_event(db, company.company_id, user.user_id, "signup", after={"email": user.email})
+    log_auth_event(
+        db,
+        cast(UUID4, cast(Any, company).company_id),
+        cast(UUID4, cast(Any, user).user_id),
+        "signup",
+        after={"email": str(cast(Any, user).email)},
+    )
 
     access_token = create_access_token(
         subject=str(user.user_id),
-        company_id=user.company_id,
-        user_version=user.user_version,
+        company_id=cast(UUID4, cast(Any, user).company_id),
+        user_version=int(cast(Any, user).user_version),
         roles=get_role_names(user),
         delegations=[],
     )
@@ -214,26 +223,32 @@ def signup(payload: SignUpRequest, db: Session = Depends(get_db_session)) -> Aut
 @router.post("/login", response_model=AuthResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db_session)) -> AuthResponse:
     user = get_user_by_email(db, payload.email, payload.company_id)
-    if user is None or not user.is_active:
+    if user is None or not bool(cast(Any, user).is_active):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-    if not verify_password(payload.password, user.password_hash):
+    if not verify_password(payload.password, str(cast(Any, user).password_hash)):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-    if not user.email_verified:
+    if not bool(cast(Any, user).email_verified):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Email address must be verified before signing in")
 
     access_token = create_access_token(
         subject=str(user.user_id),
-        company_id=user.company_id,
-        user_version=user.user_version,
+        company_id=cast(UUID4, cast(Any, user).company_id),
+        user_version=int(cast(Any, user).user_version),
         roles=get_role_names(user),
         delegations=[],
     )
     refresh_token = create_refresh_token_for_user(db, user)
     db.commit()
 
-    log_auth_event(db, user.company_id, user.user_id, "login", after={"email": user.email})
+    log_auth_event(
+        db,
+        cast(UUID4, cast(Any, user).company_id),
+        cast(UUID4, cast(Any, user).user_id),
+        "login",
+        after={"email": str(cast(Any, user).email)},
+    )
 
     return AuthResponse(
         access_token=access_token,
@@ -244,19 +259,26 @@ def login(payload: LoginRequest, db: Session = Depends(get_db_session)) -> AuthR
 
 @router.post("/refresh", response_model=AuthResponse)
 def refresh_token(payload: RefreshTokenRequest, db: Session = Depends(get_db_session)) -> AuthResponse:
+    if payload.refresh_token is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="refresh_token is required")
     refresh = resolve_refresh_token(db, payload.refresh_token)
     user = refresh.user
     revoke_refresh_token(db, payload.refresh_token)
     new_refresh_token = create_refresh_token_for_user(db, user)
     access_token = create_access_token(
         subject=str(user.user_id),
-        company_id=user.company_id,
-        user_version=user.user_version,
+        company_id=cast(UUID4, cast(Any, user).company_id),
+        user_version=int(cast(Any, user).user_version),
         roles=get_role_names(user),
         delegations=[],
     )
     db.commit()
-    log_auth_event(db, user.company_id, user.user_id, "refresh_token")
+    log_auth_event(
+        db,
+        cast(UUID4, cast(Any, user).company_id),
+        cast(UUID4, cast(Any, user).user_id),
+        "refresh_token",
+    )
     return AuthResponse(
         access_token=access_token,
         refresh_token=new_refresh_token,
@@ -283,17 +305,22 @@ def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db
         return {"message": "If that account exists, we sent a password reset email."}
 
     reset_token = generate_token(48)
-    user.reset_token_hash = hash_token(reset_token)
-    user.reset_token_expires_at = datetime.utcnow() + timedelta(hours=1)
+    cast(Any, user).reset_token_hash = hash_token(reset_token)
+    cast(Any, user).reset_token_expires_at = datetime.utcnow() + timedelta(hours=1)
     db.add(user)
     db.commit()
 
     send_email(
-        recipient=user.email,
+        recipient=str(cast(Any, user).email),
         subject="Reset your FinOps password",
         body=f"Reset your password: {build_password_reset_url(reset_token)}",
     )
-    log_auth_event(db, user.company_id, user.user_id, "forgot_password")
+    log_auth_event(
+        db,
+        cast(UUID4, cast(Any, user).company_id),
+        cast(UUID4, cast(Any, user).user_id),
+        "forgot_password",
+    )
 
     return {"message": "If that account exists, we sent a password reset email."}
 
@@ -309,15 +336,20 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db_s
     if user is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Reset token is invalid or expired")
 
-    user.password_hash = hash_password(payload.password)
-    user.user_version += 1
-    user.reset_token_hash = None
-    user.reset_token_expires_at = None
+    cast(Any, user).password_hash = hash_password(payload.password)
+    cast(Any, user).user_version = int(cast(Any, user).user_version) + 1
+    cast(Any, user).reset_token_hash = None
+    cast(Any, user).reset_token_expires_at = None
     db.add(user)
     revoke_all_refresh_tokens_for_user(db, user)
     db.commit()
 
-    log_auth_event(db, user.company_id, user.user_id, "reset_password")
+    log_auth_event(
+        db,
+        cast(UUID4, cast(Any, user).company_id),
+        cast(UUID4, cast(Any, user).user_id),
+        "reset_password",
+    )
     return {"message": "Password has been reset successfully"}
 
 
@@ -332,13 +364,18 @@ def verify_email(token: str = Query(...), db: Session = Depends(get_db_session))
     if user is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Verification token is invalid or expired")
 
-    user.email_verified = True
-    user.verification_token_hash = None
-    user.verification_token_expires_at = None
+    cast(Any, user).email_verified = True
+    cast(Any, user).verification_token_hash = None
+    cast(Any, user).verification_token_expires_at = None
     db.add(user)
     db.commit()
 
-    log_auth_event(db, user.company_id, user.user_id, "verify_email")
+    log_auth_event(
+        db,
+        cast(UUID4, cast(Any, user).company_id),
+        cast(UUID4, cast(Any, user).user_id),
+        "verify_email",
+    )
     return {"message": "Email verified successfully"}
 
 
@@ -348,12 +385,12 @@ def me(current_context: TenantContext = Depends(get_current_context), db: Sessio
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return UserResponse(
-        user_id=user.user_id,
-        company_id=user.company_id,
-        email=user.email,
-        name=user.name,
+        user_id=cast(UUID4, cast(Any, user).user_id),
+        company_id=cast(UUID4, cast(Any, user).company_id),
+        email=str(cast(Any, user).email),
+        name=str(cast(Any, user).name),
         roles=get_role_names(user),
-        email_verified=user.email_verified,
-        is_active=user.is_active,
+        email_verified=bool(cast(Any, user).email_verified),
+        is_active=bool(cast(Any, user).is_active),
     )
 

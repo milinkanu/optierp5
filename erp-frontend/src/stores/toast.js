@@ -15,5 +15,11 @@ export const useToastStore = defineStore('toast', {
         this.visible = false
       }, 4000)
     },
+    success(message) {
+      this.show(message, 'success')
+    },
+    error(message) {
+      this.show(message, 'error')
+    },
   },
 })

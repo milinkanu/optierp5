@@ -11,15 +11,22 @@ from fastapi.responses import JSONResponse
 import traceback
 
 from routes import auth, companies, health, invoices, onboarding, transactions
+from routes import chart_of_accounts, contacts, items
 from routes.inspector import router as inspector_router
 
 app = FastAPI()
 
+dev_allow_all = os.getenv("DEV_ALLOW_ALL_ORIGINS", "true").lower() == "true"
 allowed_origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",") if origin.strip()]
+if not allowed_origins:
+    allowed_origins = ["http://localhost:5173"]
+
+allow_origin_regex = os.getenv("ALLOW_ORIGIN_REGEX", r"^https?://localhost(:\d+)?$")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
+    allow_origins=["*"] if dev_allow_all else allowed_origins,
+    allow_origin_regex=None if dev_allow_all else allow_origin_regex,
+    allow_credentials=False if dev_allow_all else True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -43,6 +50,9 @@ app.include_router(companies.router)
 app.include_router(onboarding.router)
 app.include_router(invoices.router)
 app.include_router(transactions.router)
+app.include_router(chart_of_accounts.router)
+app.include_router(contacts.router)
+app.include_router(items.router)
 app.include_router(inspector_router)
 
 if __name__ == '__main__':

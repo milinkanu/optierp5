@@ -48,6 +48,7 @@ CREATE TABLE invoices (
     shipping_party_id UUID REFERENCES parties(party_id),
     currency TEXT NOT NULL DEFAULT 'INR',
     exchange_rate NUMERIC(18,8) NOT NULL DEFAULT 1,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
     invoice_subtotal NUMERIC(18,2) NOT NULL DEFAULT 0 CHECK (invoice_subtotal >= 0),
     invoice_total_gst NUMERIC(18,2) NOT NULL DEFAULT 0 CHECK (invoice_total_gst >= 0),
     invoice_total_tds NUMERIC(18,2) NOT NULL DEFAULT 0 CHECK (invoice_total_tds >= 0),
@@ -84,6 +85,7 @@ CREATE TABLE invoice_items (
     tcs_rate NUMERIC(5,2) NOT NULL DEFAULT 0 CHECK (tcs_rate >= 0 AND tcs_rate <= 100),
     tcs_amount NUMERIC(18,2) NOT NULL DEFAULT 0 CHECK (tcs_amount >= 0),
     total_amount NUMERIC(18,2) NOT NULL CHECK (total_amount >= 0),
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(invoice_id, line_number)

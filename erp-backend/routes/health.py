@@ -9,3 +9,14 @@ router = APIRouter(tags=["health"])
 async def health_check():
     return {"status": "ok"}
 
+
+@router.get("/")
+async def root():
+    return {
+        "name": "OptiERP API",
+        "status": "ok",
+        "docs": "/docs",
+        "openapi": "/openapi.json",
+        "health": "/health",
+    }
+

@@ -61,7 +61,7 @@ BEGIN
         CREATE TYPE gst_type_enum AS ENUM ('regular','composition','unregistered','sez');
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'party_type_enum') THEN
-        CREATE TYPE party_type_enum AS ENUM ('customer','vendor','employee','other');
+        CREATE TYPE party_type_enum AS ENUM ('customer','vendor','both','employee','other');
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'txn_type_enum') THEN
         CREATE TYPE txn_type_enum AS ENUM ('sales_invoice','purchase_invoice','payment','receipt','expense','journal','contra','debit_note','credit_note','purchase_order');
@@ -124,11 +124,24 @@ CREATE TABLE companies (
     udyam_no TEXT,
     gst_type gst_type_enum NOT NULL,
     primary_state TEXT NOT NULL,
+    address JSONB,
+    logo_url TEXT,
+    fiscal_year_start DATE,
+    currency TEXT NOT NULL DEFAULT 'INR',
+    timezone TEXT NOT NULL DEFAULT 'Asia/Kolkata',
     extra_states TEXT[],
     onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Safe schema upgrades (when tables already exist).
+ALTER TABLE companies
+    ADD COLUMN IF NOT EXISTS address JSONB,
+    ADD COLUMN IF NOT EXISTS logo_url TEXT,
+    ADD COLUMN IF NOT EXISTS fiscal_year_start DATE,
+    ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'INR',
+    ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'Asia/Kolkata';
 
 CREATE TABLE users (
     user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -204,6 +217,7 @@ CREATE TABLE chart_of_accounts (
     account_code TEXT NOT NULL,
     account_name TEXT NOT NULL,
     account_type account_type_enum NOT NULL,
+    description TEXT,
     parent_account_id UUID REFERENCES chart_of_accounts(account_id),
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -230,12 +244,25 @@ CREATE TABLE parties (
     party_name TEXT NOT NULL,
     party_type party_type_enum NOT NULL,
     gstin TEXT CHECK (gstin IS NULL OR gstin ~ '^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$'),
+    pan TEXT CHECK (pan IS NULL OR pan ~ '^[A-Z]{5}[0-9]{4}[A-Z]{1}$'),
+    email TEXT,
+    phone TEXT,
+    payment_terms TEXT,
+    currency TEXT NOT NULL DEFAULT 'INR',
     billing_address JSONB,
     shipping_address JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(company_id, party_name)
 );
+
+-- Safe schema upgrades (when tables already exist).
+ALTER TABLE parties
+    ADD COLUMN IF NOT EXISTS pan TEXT,
+    ADD COLUMN IF NOT EXISTS email TEXT,
+    ADD COLUMN IF NOT EXISTS phone TEXT,
+    ADD COLUMN IF NOT EXISTS payment_terms TEXT,
+    ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'INR';
 
 CREATE TABLE transactions (
     transaction_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -454,6 +481,17 @@ CREATE TABLE inventory_items (
     item_type TEXT NOT NULL,
     hsn_sac TEXT,
     unit TEXT NOT NULL,
+    sku TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    description TEXT,
+    image_url TEXT,
+    is_track_inventory BOOLEAN NOT NULL DEFAULT FALSE,
+    reorder_point NUMERIC(18,4),
+    selling_price NUMERIC(18,2),
+    purchase_price NUMERIC(18,2),
+    sales_account_id UUID REFERENCES chart_of_accounts(account_id),
+    purchase_account_id UUID REFERENCES chart_of_accounts(account_id),
+    preferred_vendor_id UUID REFERENCES parties(party_id),
     valuation_method TEXT NOT NULL,
     opening_stock NUMERIC(18,4),
     opening_value NUMERIC(18,2),

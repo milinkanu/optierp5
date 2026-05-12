@@ -8,6 +8,12 @@ import ForgotPasswordView from '../views/auth/ForgotPasswordView.vue'
 import ResetPasswordView from '../views/auth/ResetPasswordView.vue'
 import VerifyEmailView from '../views/auth/VerifyEmailView.vue'
 import DashboardView from '../views/dashboard/DashboardView.vue'
+import ChartOfAccountsView from '../views/accountant/ChartOfAccountsView.vue'
+import ContactsView from '../views/contacts/ContactsView.vue'
+import InvoicesListView from '../views/sales/InvoicesListView.vue'
+import InvoiceCreateView from '../views/sales/InvoiceCreateView.vue'
+import InvoiceDetailView from '../views/sales/InvoiceDetailView.vue'
+import ItemsView from '../views/items/ItemsView.vue'
 
 const routes = [
   {
@@ -25,7 +31,15 @@ const routes = [
     path: '/',
     component: DashboardLayout,
     meta: { requiresAuth: true },
-    children: [{ path: '', name: 'Dashboard', component: DashboardView }],
+    children: [
+      { path: '', name: 'Dashboard', component: DashboardView },
+      { path: 'accountant/chart-of-accounts', name: 'ChartOfAccounts', component: ChartOfAccountsView },
+      { path: 'contacts', name: 'Contacts', component: ContactsView },
+      { path: 'sales/invoices', name: 'Invoices', component: InvoicesListView },
+      { path: 'sales/invoices/new', name: 'InvoiceNew', component: InvoiceCreateView },
+      { path: 'sales/invoices/:invoiceId', name: 'InvoiceDetail', component: InvoiceDetailView },
+      { path: 'items', name: 'Items', component: ItemsView },
+    ],
   },
   {
     path: '/index.html',

@@ -22,6 +22,16 @@
           <i class="icon">🏠</i>
           <span v-if="!isCollapsed">Home</span>
         </router-link>
+
+        <router-link to="/contacts" class="nav-item">
+          <i class="icon">C</i>
+          <span v-if="!isCollapsed">Contacts</span>
+        </router-link>
+
+        <router-link to="/items" class="nav-item">
+          <i class="icon">M</i>
+          <span v-if="!isCollapsed">Items Master</span>
+        </router-link>
         
         <div class="nav-group">
           <div class="nav-item">
@@ -70,6 +80,16 @@
           <i class="icon">📁</i>
           <span v-if="!isCollapsed">Documents</span>
         </div>
+
+        <router-link to="/sales/invoices" class="nav-item">
+          <i class="icon">I</i>
+          <span v-if="!isCollapsed">Invoices</span>
+        </router-link>
+
+        <router-link to="/accountant/chart-of-accounts" class="nav-item">
+          <i class="icon">A</i>
+          <span v-if="!isCollapsed">Chart of Accounts</span>
+        </router-link>
       </nav>
 
       <div class="sidebar-footer" v-if="!isCollapsed">
