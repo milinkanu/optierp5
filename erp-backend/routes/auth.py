@@ -28,6 +28,32 @@ from utils.security import generate_token, hash_password, hash_token, verify_pas
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+COMPANY_TYPE_ALIASES: dict[str, str] = {
+    "sole proprietorship": "sole_prop",
+    "sole prop": "sole_prop",
+    "proprietorship": "sole_prop",
+    "partnership": "partnership",
+    "private limited": "pvt_ltd",
+    "pvt ltd": "pvt_ltd",
+    "pvt_ltd": "pvt_ltd",
+    "llp": "llp",
+    "opc": "opc",
+    "huf": "HUF",
+}
+COMPANY_TYPE_ALLOWED: set[str] = {"sole_prop", "partnership", "pvt_ltd", "llp", "opc", "HUF"}
+
+
+def normalize_company_type(value: str) -> str:
+    normalized = value.strip()
+    key = " ".join(normalized.lower().replace("_", " ").split())
+    resolved = COMPANY_TYPE_ALIASES.get(key, normalized)
+    if resolved not in COMPANY_TYPE_ALLOWED:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid company_type '{value}'. Allowed: {', '.join(sorted(COMPANY_TYPE_ALLOWED))}",
+        )
+    return resolved
+
 
 def normalize_email(email: str) -> str:
     return email.strip().lower()
@@ -121,10 +147,11 @@ def signup(payload: SignUpRequest, db: Session = Depends(get_db_session)) -> Aut
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already in use")
 
+    company_type = normalize_company_type(payload.company.company_type)
     company = Company(
         company_name=payload.company.company_name,
         trade_name=payload.company.trade_name,
-        company_type=payload.company.company_type,
+        company_type=company_type,
         pan=payload.company.pan,
         gstin=payload.company.gstin,
         tan=payload.company.tan,
