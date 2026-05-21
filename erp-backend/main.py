@@ -12,9 +12,19 @@ import traceback
 
 from routes import auth, companies, health, invoices, onboarding, transactions, quotes, sales_orders
 from routes import chart_of_accounts, contacts, items
+from routes import recurring_invoices, delivery_challans, payments
 from routes.inspector import router as inspector_router
+from services.scheduler import start_scheduler, stop_scheduler
 
 app = FastAPI()
+
+@app.on_event("startup")
+async def startup_event():
+    start_scheduler()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    stop_scheduler()
 
 dev_allow_all = os.getenv("DEV_ALLOW_ALL_ORIGINS", "true").lower() == "true"
 allowed_origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",") if origin.strip()]
@@ -69,6 +79,9 @@ app.include_router(contacts.router)
 app.include_router(items.router)
 app.include_router(quotes.router)
 app.include_router(sales_orders.router)
+app.include_router(recurring_invoices.router)
+app.include_router(delivery_challans.router)
+app.include_router(payments.router)
 app.include_router(inspector_router)
 
 if __name__ == '__main__':

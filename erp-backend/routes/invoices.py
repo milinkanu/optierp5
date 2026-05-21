@@ -630,3 +630,85 @@ async def allocate_payment(
         )
 
         return await get_invoice(invoice_id=invoice_id, current_context=current_context)
+
+
+from pydantic import BaseModel
+class RecordPaymentRequest(BaseModel):
+    amount: Decimal
+    payment_date: date
+    payment_mode: str
+    settlement_bank_account_id: UUID | None = None
+    reference_number: str | None = None
+    notes: str | None = None
+
+@router.post("/{invoice_id}/record-payment", response_model=InvoiceResponse)
+async def record_payment(
+    invoice_id: UUID,
+    payload: RecordPaymentRequest,
+    current_context: TenantContext = Depends(get_current_context)
+):
+    from services.payment_service import create_payment
+    from models.payments import PaymentCreateRequest, PaymentAllocationCreate
+    
+    # 1. Fetch the invoice first to get billing_party_id (customer)
+    if os.getenv('FINOPS_USE_DATABASE', 'true').lower() == 'false':
+        inv = get_or_create_mock_invoice(invoice_id)
+        party_id = inv.billing_party_id
+    else:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text('SELECT billing_party_id FROM invoices WHERE invoice_id = :invoice_id AND company_id = :company_id AND is_deleted = FALSE'),
+                {'invoice_id': str(invoice_id), 'company_id': str(current_context.company_id)}
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Invoice not found")
+            row_dict = dict(row._mapping) if hasattr(row, '_mapping') else dict(row)
+            party_id = row_dict['billing_party_id']
+
+    # 2. Construct PaymentCreateRequest payload
+    payment_payload = PaymentCreateRequest(
+        party_id=party_id,
+        amount=payload.amount,
+        payment_date=payload.payment_date,
+        payment_mode=payload.payment_mode,
+        settlement_bank_account_id=payload.settlement_bank_account_id,
+        reference_number=payload.reference_number,
+        notes=payload.notes,
+        allocations=[
+            PaymentAllocationCreate(
+                invoice_id=invoice_id,
+                amount=payload.amount
+            )
+        ]
+    )
+
+    try:
+        # 3. Create the payment received record
+        create_payment(
+            payload=payment_payload,
+            company_id=current_context.company_id,
+            user_id=current_context.user_id
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # 4. Fetch and return the updated invoice
+    return await get_invoice(invoice_id=invoice_id, current_context=current_context)
+
+
+from models.payments import PaymentAllocationResponse
+@router.get("/{invoice_id}/payments", response_model=list[PaymentAllocationResponse])
+async def get_invoice_payments_list(
+    invoice_id: UUID,
+    current_context: TenantContext = Depends(get_current_context)
+):
+    from services.payment_service import get_invoice_payments
+    try:
+        allocations = get_invoice_payments(
+            invoice_id=invoice_id,
+            company_id=current_context.company_id
+        )
+        return allocations
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve invoice payments: {str(e)}")
+

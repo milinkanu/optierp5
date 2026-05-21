@@ -31,5 +31,13 @@ export const invoicesApi = {
     const { data } = await api.get(`/invoices/${invoiceId}/pdf`, { responseType: 'blob' })
     return data
   },
+  async recordPayment(invoiceId, payload) {
+    const { data } = await api.post(`/invoices/${invoiceId}/record-payment`, payload)
+    return data
+  },
+  async getPayments(invoiceId) {
+    const { data } = await api.get(`/invoices/${invoiceId}/payments`)
+    return data
+  },
 }
 

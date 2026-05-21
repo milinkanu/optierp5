@@ -33,10 +33,16 @@ async def create_journal_entry(
     created_at = datetime.utcnow()
 
     with engine.begin() as conn:
+        # Set the session tenant context for Row Level Security
+        conn.execute(
+            text("SET LOCAL app.current_company = :company_id"),
+            {"company_id": str(current_context.company_id)}
+        )
+
         conn.execute(
             text(
                 "INSERT INTO journal_entries (journal_id, company_id, journal_number, journal_type, journal_date, description, reference, transaction_id, status, created_by, updated_by, created_at, updated_at)"
-                " VALUES (:journal_id, :company_id, :journal_number, :journal_type, :journal_date, :description, :reference, :transaction_id, 'posted', :created_by, :updated_by, :created_at, :updated_at)"
+                " VALUES (:journal_id, :company_id, :journal_number, :journal_type, :journal_date, :description, :reference, :transaction_id, 'draft', :created_by, :updated_by, :created_at, :updated_at)"
             ),
             {
                 "journal_id": str(journal_id),
@@ -71,6 +77,12 @@ async def create_journal_entry(
                     "created_at": created_at,
                 },
             )
+
+        # Update status to 'posted' (now that the lines exist and balance, trigger will succeed)
+        conn.execute(
+            text("UPDATE journal_entries SET status = 'posted', updated_at = now() WHERE journal_id = :journal_id"),
+            {"journal_id": str(journal_id)}
+        )
 
     return JournalResponse(
         journal_id=journal_id,
@@ -112,6 +124,12 @@ async def reverse_journal_entry(journal_id: UUID, current_context: TenantContext
     created_at = datetime.utcnow()
 
     with engine.begin() as conn:
+        # Set the session tenant context for Row Level Security
+        conn.execute(
+            text("SET LOCAL app.current_company = :company_id"),
+            {"company_id": str(current_context.company_id)}
+        )
+
         original = conn.execute(
             text("SELECT journal_id, journal_date, transaction_id FROM journal_entries WHERE company_id = :company_id AND journal_id = :journal_id"),
             {"company_id": str(current_context.company_id), "journal_id": str(journal_id)},
@@ -119,19 +137,22 @@ async def reverse_journal_entry(journal_id: UUID, current_context: TenantContext
         if original is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Original journal not found")
 
+        # Access Row elements safely as a mapping if possible
+        orig_dict = dict(original._mapping) if hasattr(original, '_mapping') else dict(original)
+
         conn.execute(
             text(
                 "INSERT INTO journal_entries (journal_id, company_id, journal_number, journal_type, journal_date, description, reference, transaction_id, status, created_by, updated_by, created_at, updated_at)"
-                " VALUES (:journal_id, :company_id, :journal_number, 'reversal', :journal_date, :description, :reference, :transaction_id, 'posted', :created_by, :updated_by, :created_at, :updated_at)"
+                " VALUES (:journal_id, :company_id, :journal_number, 'reversal', :journal_date, :description, :reference, :transaction_id, 'draft', :created_by, :updated_by, :created_at, :updated_at)"
             ),
             {
                 "journal_id": str(reversal_journal_id),
                 "company_id": str(current_context.company_id),
                 "journal_number": f"REV-{str(uuid4())[:8]}",
-                "journal_date": original["journal_date"],
+                "journal_date": orig_dict["journal_date"],
                 "description": "Reversal of journal " + str(journal_id),
                 "reference": str(journal_id),
-                "transaction_id": original["transaction_id"],
+                "transaction_id": orig_dict["transaction_id"],
                 "created_by": str(current_context.user_id),
                 "updated_by": str(current_context.user_id),
                 "created_at": created_at,
@@ -147,7 +168,8 @@ async def reverse_journal_entry(journal_id: UUID, current_context: TenantContext
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Original journal has no lines to reverse")
 
         for row in rows:
-            reversed_type = "debit" if row["entry_type"] == "credit" else "credit"
+            row_dict = dict(row._mapping) if hasattr(row, '_mapping') else dict(row)
+            reversed_type = "debit" if row_dict["entry_type"] == "credit" else "credit"
             conn.execute(
                 text(
                     "INSERT INTO journal_entry_lines (journal_line_id, journal_id, company_id, account_id, entry_type, amount, description, party_id, created_at)"
@@ -156,14 +178,20 @@ async def reverse_journal_entry(journal_id: UUID, current_context: TenantContext
                 {
                     "journal_id": str(reversal_journal_id),
                     "company_id": str(current_context.company_id),
-                    "account_id": str(row["account_id"]),
+                    "account_id": str(row_dict["account_id"]),
                     "entry_type": reversed_type,
-                    "amount": row["amount"],
-                    "description": row["description"],
-                    "party_id": str(row["party_id"]) if row["party_id"] else None,
+                    "amount": row_dict["amount"],
+                    "description": row_dict["description"],
+                    "party_id": str(row_dict["party_id"]) if row_dict["party_id"] else None,
                     "created_at": created_at,
                 },
             )
+
+        # Update status to 'posted' (now that the lines exist and balance, trigger will succeed)
+        conn.execute(
+            text("UPDATE journal_entries SET status = 'posted', updated_at = now() WHERE journal_id = :journal_id"),
+            {"journal_id": str(reversal_journal_id)}
+        )
 
     return ReversalResponse(
         original_journal_id=journal_id,

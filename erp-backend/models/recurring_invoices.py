@@ -8,7 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
-class InvoiceItemCreate(BaseModel):
+class RecurringInvoiceItemCreate(BaseModel):
     inventory_item_id: Optional[UUID] = None
     description: str
     hsn_sac: Optional[str] = None
@@ -21,31 +21,33 @@ class InvoiceItemCreate(BaseModel):
     tcs_rate: Annotated[Decimal, Field(ge=0, le=100, max_digits=5, decimal_places=2)] = Decimal("0")
 
 
-class InvoiceCreateRequest(BaseModel):
-    invoice_type: str
-    invoice_date: date
-    due_date: Optional[date] = None
-    billing_party_id: Optional[UUID] = None
+class RecurringInvoiceProfileCreateRequest(BaseModel):
+    profile_name: str
+    billing_party_id: UUID
     shipping_party_id: Optional[UUID] = None
+    frequency: str = Field(..., pattern="^(daily|weekly|monthly|quarterly|yearly)$")
+    start_date: date
+    end_date: Optional[date] = None
+    auto_email: bool = False
+    currency: str = "INR"
+    exchange_rate: Annotated[Decimal, Field(gt=0, max_digits=18, decimal_places=8)] = Decimal("1")
     order_number: Optional[str] = None
     salesperson_id: Optional[UUID] = None
     subject: Optional[str] = None
     customer_notes: Optional[str] = None
     terms_and_conditions: Optional[str] = None
-    currency: str = "INR"
-    exchange_rate: Annotated[Decimal, Field(gt=0, max_digits=18, decimal_places=8)] = Decimal("1")
-    items: List[InvoiceItemCreate]
-    meta: Optional[dict] = None
+    items: List[RecurringInvoiceItemCreate]
 
 
-class InvoiceItemResponse(BaseModel):
-    invoice_item_id: UUID
-    invoice_id: UUID
+class RecurringInvoiceItemResponse(BaseModel):
+    profile_item_id: UUID
+    profile_id: UUID
     company_id: UUID
     line_number: int
     description: str
     hsn_sac: Optional[str] = None
-    account_id: Optional[UUID] = None
+    inventory_item_id: Optional[UUID] = None
+    account_id: UUID
     quantity: float
     unit_price: float
     discount_amount: float
@@ -59,37 +61,39 @@ class InvoiceItemResponse(BaseModel):
     total_amount: float
 
 
-class InvoiceResponse(BaseModel):
-    invoice_id: UUID
-    invoice_number: str
-    invoice_type: str
-    invoice_date: date
-    due_date: Optional[date] = None
-    billing_party_id: Optional[UUID] = None
+class RecurringInvoiceProfileResponse(BaseModel):
+    profile_id: UUID
+    company_id: UUID
+    profile_name: str
+    billing_party_id: UUID
     shipping_party_id: Optional[UUID] = None
+    frequency: str
+    status: str
+    start_date: date
+    end_date: Optional[date] = None
+    next_run_date: date
+    last_run_date: Optional[date] = None
+    auto_email: bool
+    currency: str
+    exchange_rate: float
     order_number: Optional[str] = None
     salesperson_id: Optional[UUID] = None
     subject: Optional[str] = None
     customer_notes: Optional[str] = None
     terms_and_conditions: Optional[str] = None
-    status: str
-    invoice_subtotal: float = 0
-    invoice_total_gst: float = 0
-    invoice_total_tds: float = 0
-    invoice_total_tcs: float = 0
-    invoice_grand_total: float
-    paid_amount: float
-    balance_due: float
-    currency: str = "INR"
+    created_by: UUID
+    updated_by: UUID
     created_at: datetime
-    delivery_challan_id: Optional[UUID] = None
-    recurring_profile_id: Optional[UUID] = None
-    items: Optional[List[InvoiceItemResponse]] = []
+    updated_at: datetime
+    items: Optional[List[RecurringInvoiceItemResponse]] = []
 
 
-class PaymentAllocationRequest(BaseModel):
-    payment_transaction_id: UUID
-    allocated_amount: Annotated[Decimal, Field(gt=0, max_digits=18, decimal_places=2)]
-    currency: str = "INR"
-    exchange_rate: Annotated[Decimal, Field(gt=0, max_digits=18, decimal_places=8)] = Decimal("1")
-
+class RecurringInvoiceLogResponse(BaseModel):
+    log_id: UUID
+    profile_id: UUID
+    company_id: UUID
+    run_date: datetime
+    status: str
+    generated_invoice_id: Optional[UUID] = None
+    error_message: Optional[str] = None
+    created_at: datetime

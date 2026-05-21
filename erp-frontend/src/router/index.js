@@ -20,6 +20,13 @@ import SalesOrdersListView from '../views/sales/SalesOrdersListView.vue'
 import SalesOrderCreateView from '../views/sales/SalesOrderCreateView.vue'
 import SalesOrderDetailView from '../views/sales/SalesOrderDetailView.vue'
 import ItemsView from '../views/items/ItemsView.vue'
+import RecurringInvoicesView from '../views/sales/RecurringInvoicesView.vue'
+import RecurringInvoiceCreateView from '../views/sales/RecurringInvoiceCreateView.vue'
+import DeliveryChallansView from '../views/sales/DeliveryChallansView.vue'
+import DeliveryChallanCreateView from '../views/sales/DeliveryChallanCreateView.vue'
+import PaymentsReceivedView from '../views/sales/PaymentsReceivedView.vue'
+import PaymentReceivedDetailView from '../views/sales/PaymentReceivedDetailView.vue'
+
 
 const routes = [
   {
@@ -53,6 +60,12 @@ const routes = [
       { path: 'sales/orders/:salesOrderId', name: 'SalesOrderDetail', component: SalesOrderDetailView },
       { path: 'sales/orders/:salesOrderId/edit', name: 'SalesOrderEdit', component: SalesOrderCreateView },
       { path: 'items', name: 'Items', component: ItemsView },
+      { path: 'sales/recurring-invoices', name: 'RecurringInvoices', component: RecurringInvoicesView },
+      { path: 'sales/recurring-invoices/new', name: 'RecurringInvoiceNew', component: RecurringInvoiceCreateView },
+      { path: 'sales/delivery-challans', name: 'DeliveryChallans', component: DeliveryChallansView },
+      { path: 'sales/delivery-challans/new', name: 'DeliveryChallanNew', component: DeliveryChallanCreateView },
+      { path: 'sales/payments-received', name: 'PaymentsReceived', component: PaymentsReceivedView },
+      { path: 'sales/payments-received/:paymentId', name: 'PaymentReceivedDetail', component: PaymentReceivedDetailView },
     ],
   },
   {
