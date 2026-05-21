@@ -198,6 +198,27 @@ instance/
 docs/_build/
 
 # PyBuilder
+
+# Virtual environments
+venv/
+.venv/
+env/
+.envrc
+
+# Type checking / lint caches
+.mypy_cache/
+.ruff_cache/
+.pytype/
+
+# IDEs / editors
+.vscode/
+.idea/
+*.swp
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
 .pybuilder/
 target/
 

@@ -13,6 +13,11 @@ from services.invoice_service import app
 class TestInvoiceService:
     """Test invoice service endpoints"""
 
+    @pytest.fixture(autouse=True)
+    def force_mock_mode(self, monkeypatch):
+        """Force FINOPS_USE_DATABASE=false for these tests"""
+        monkeypatch.setenv("FINOPS_USE_DATABASE", "false")
+
     @pytest.fixture
     def client(self):
         """Create a test client"""

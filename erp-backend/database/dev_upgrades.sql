@@ -31,6 +31,15 @@ ALTER TABLE invoices
 ALTER TABLE invoice_items
     ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- Additional invoice fields for complete form support.
+ALTER TABLE invoices
+    ADD COLUMN IF NOT EXISTS order_number TEXT,
+    ADD COLUMN IF NOT EXISTS salesperson_id UUID REFERENCES parties(party_id),
+    ADD COLUMN IF NOT EXISTS subject TEXT,
+    ADD COLUMN IF NOT EXISTS customer_notes TEXT,
+    ADD COLUMN IF NOT EXISTS terms_and_conditions TEXT,
+    ADD COLUMN IF NOT EXISTS reference_document_url TEXT;
+
 -- Items (inventory_items) upgrades to support Zoho-Books-like item master.
 ALTER TABLE inventory_items
     ADD COLUMN IF NOT EXISTS sku TEXT,

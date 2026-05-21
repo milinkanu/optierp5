@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from uuid import UUID, uuid4
 import json
 import os
@@ -8,35 +8,146 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from sqlalchemy import text
 from decimal import Decimal
 
-from models.invoices import InvoiceCreateRequest, InvoiceResponse, PaymentAllocationRequest
+from models.invoices import InvoiceCreateRequest, InvoiceResponse, PaymentAllocationRequest, InvoiceItemResponse
 from utils.auth import TenantContext, get_current_context
 from utils.db_invoice import engine
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 
+# Shared in-memory mock invoices database for DB-bypass mode
+MOCK_INVOICES: dict[UUID, InvoiceResponse] = {}
 
-def build_invoice_response(payload: InvoiceCreateRequest) -> InvoiceResponse:
-    invoice_id = uuid4()
-    invoice_number = f"{payload.invoice_type[:3].upper()}-{payload.invoice_date.year}-{str(uuid4())[:8]}"
+
+def get_or_create_mock_invoice(invoice_id: UUID) -> InvoiceResponse:
+    if invoice_id in MOCK_INVOICES:
+        return MOCK_INVOICES[invoice_id]
+
+    # Prepopulate default or generate a beautiful realistic mock invoice on-the-fly
+    items = [
+        InvoiceItemResponse(
+            invoice_item_id=uuid4(),
+            invoice_id=invoice_id,
+            company_id=UUID("00000000-0000-0000-0000-000000000000"),
+            line_number=1,
+            description="Pens",
+            hsn_sac="9608",
+            account_id=uuid4(),
+            quantity=1.0,
+            unit_price=100.0,
+            discount_amount=20.0,
+            taxable_amount=80.0,
+            gst_rate=0.0,
+            gst_amount=0.0,
+            tds_rate=10.0,
+            tds_amount=8.0,
+            tcs_rate=0.0,
+            tcs_amount=0.0,
+            total_amount=72.0
+        )
+    ]
+
+    # Matching standard default INV-000001
+    inv = InvoiceResponse(
+        invoice_id=invoice_id,
+        invoice_number="INV-000001" if str(invoice_id).startswith("00000000") else f"INV-2026-{str(uuid4())[:8].upper()}",
+        invoice_type="sales_invoice",
+        invoice_date=datetime(2026, 5, 11).date(),
+        due_date=datetime(2026, 5, 11).date(),
+        billing_party_id=UUID("ce3ba27e-128a-45bd-b65d-9c7f1db8816c"),  # Milin Kanu in mock contacts
+        shipping_party_id=UUID("ce3ba27e-128a-45bd-b65d-9c7f1db8816c"),
+        order_number="SO-00001",
+        salesperson_id=None,
+        subject="Office supplies delivery",
+        customer_notes="Thanks for your business.",
+        terms_and_conditions="Due on Receipt",
+        status="overdue",
+        invoice_subtotal=100.0,
+        invoice_total_gst=0.0,
+        invoice_total_tds=8.0,
+        invoice_total_tcs=0.0,
+        invoice_grand_total=72.0,
+        paid_amount=0.0,
+        balance_due=72.0,
+        currency="INR",
+        created_at=datetime(2026, 5, 11, 10, 0, 0),
+        items=items
+    )
+    MOCK_INVOICES[invoice_id] = inv
+    return inv
+
+
+def build_invoice_response(payload: InvoiceCreateRequest, invoice_id: UUID | None = None, status_val: str = 'draft') -> InvoiceResponse:
+    inv_id = invoice_id or uuid4()
+    invoice_number = f"INV-2026-{str(uuid4())[:8].upper()}"
+    
+    subtotal = Decimal('0')
+    total_gst = Decimal('0')
+    total_tds = Decimal('0')
+    total_tcs = Decimal('0')
     grand_total = Decimal('0')
+    items = []
 
-    for item in payload.items:
+    for idx, item in enumerate(payload.items):
         taxable_amount = item.quantity * item.unit_price - item.discount_amount
         gst_amount = taxable_amount * item.gst_rate / Decimal('100')
         tds_amount = taxable_amount * item.tds_rate / Decimal('100')
         tcs_amount = taxable_amount * item.tcs_rate / Decimal('100')
-        grand_total += taxable_amount + gst_amount + tcs_amount - tds_amount
+        total_amount = taxable_amount + gst_amount + tcs_amount - tds_amount
+        
+        subtotal += taxable_amount
+        total_gst += gst_amount
+        total_tds += tds_amount
+        total_tcs += tcs_amount
+        grand_total += total_amount
 
-    return InvoiceResponse(
-        invoice_id=invoice_id,
+        items.append(InvoiceItemResponse(
+            invoice_item_id=uuid4(),
+            invoice_id=inv_id,
+            company_id=UUID("00000000-0000-0000-0000-000000000000"),
+            line_number=idx + 1,
+            description=item.description,
+            hsn_sac=item.hsn_sac or "0000",
+            account_id=item.account_id or uuid4(),
+            quantity=float(item.quantity),
+            unit_price=float(item.unit_price),
+            discount_amount=float(item.discount_amount),
+            taxable_amount=float(taxable_amount),
+            gst_rate=float(item.gst_rate),
+            gst_amount=float(gst_amount),
+            tds_rate=float(item.tds_rate),
+            tds_amount=float(tds_amount),
+            tcs_rate=float(item.tcs_rate),
+            tcs_amount=float(tcs_amount),
+            total_amount=float(total_amount)
+        ))
+
+    inv = InvoiceResponse(
+        invoice_id=inv_id,
         invoice_number=invoice_number,
         invoice_type=payload.invoice_type,
-        status='draft',
+        invoice_date=payload.invoice_date,
+        due_date=payload.due_date,
+        billing_party_id=payload.billing_party_id,
+        shipping_party_id=payload.shipping_party_id,
+        order_number=payload.order_number,
+        salesperson_id=payload.salesperson_id,
+        subject=payload.subject,
+        customer_notes=payload.customer_notes,
+        terms_and_conditions=payload.terms_and_conditions,
+        status=status_val,
+        invoice_subtotal=float(subtotal),
+        invoice_total_gst=float(total_gst),
+        invoice_total_tds=float(total_tds),
+        invoice_total_tcs=float(total_tcs),
         invoice_grand_total=float(grand_total),
         paid_amount=0.0,
         balance_due=float(grand_total),
-        created_at=datetime.utcnow()
+        currency=payload.currency,
+        created_at=datetime.utcnow(),
+        items=items
     )
+    MOCK_INVOICES[inv_id] = inv
+    return inv
 
 
 @router.post("", response_model=InvoiceResponse)
@@ -50,7 +161,7 @@ async def create_invoice(
     if len(payload.items) == 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Invoice must contain at least one line item')
 
-    if os.getenv('FINOPS_USE_DATABASE', '').lower() != 'true':
+    if os.getenv('FINOPS_USE_DATABASE', 'true').lower() == 'false':
         return build_invoice_response(payload)
 
     with engine.begin() as conn:
@@ -219,7 +330,15 @@ async def create_invoice(
             invoice_id=invoice_id,
             invoice_number=invoice_number,
             invoice_type=payload.invoice_type,
+            invoice_date=payload.invoice_date,
+            due_date=payload.due_date,
+            billing_party_id=payload.billing_party_id,
+            shipping_party_id=payload.shipping_party_id,
             status='draft',
+            invoice_subtotal=subtotal,
+            invoice_total_gst=total_gst,
+            invoice_total_tds=total_tds,
+            invoice_total_tcs=total_tcs,
             invoice_grand_total=grand_total,
             paid_amount=0,
             balance_due=grand_total,
@@ -233,6 +352,13 @@ async def post_invoice(
     idempotency_key: UUID = Header(..., alias='Idempotency-Key'),
     current_context: TenantContext = Depends(get_current_context)
 ):
+    if os.getenv('FINOPS_USE_DATABASE', 'true').lower() == 'false':
+        inv = get_or_create_mock_invoice(invoice_id)
+        if inv.status != 'draft':
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Only draft invoices can be posted')
+        inv.status = 'posted'
+        return inv
+
     with engine.begin() as conn:
         invoice = conn.execute(
             text('SELECT invoice_id, invoice_number, invoice_type, invoice_grand_total, paid_amount, balance_due, status FROM invoices WHERE invoice_id = :invoice_id AND company_id = :company_id AND is_deleted = FALSE'),
@@ -249,14 +375,7 @@ async def post_invoice(
             {'status': 'posted', 'updated_at': datetime.utcnow(), 'invoice_id': str(invoice_id)}
         )
 
-        updated_invoice = conn.execute(
-            text('SELECT invoice_id, invoice_number, invoice_type, invoice_grand_total, paid_amount, balance_due, status, created_at FROM invoices WHERE invoice_id = :invoice_id AND is_deleted = FALSE'),
-            {'invoice_id': str(invoice_id)}
-        ).fetchone()
-        if updated_invoice is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Invoice not found after posting')
-        invoice_dict = dict(updated_invoice._mapping) if hasattr(updated_invoice, '_mapping') else dict(updated_invoice)
-        return InvoiceResponse(**invoice_dict)
+        return await get_invoice(invoice_id=invoice_id, current_context=current_context)
 
 
 @router.get("", response_model=list[InvoiceResponse])
@@ -266,6 +385,17 @@ async def list_invoices(
     limit: int = 25,
     invoice_type: str | None = None,
 ):
+    if os.getenv('FINOPS_USE_DATABASE', 'true').lower() == 'false':
+        if not MOCK_INVOICES:
+            get_or_create_mock_invoice(UUID("00000000-0000-0000-0000-000000000001"))
+        
+        results = list(MOCK_INVOICES.values())
+        if invoice_type:
+            results = [x for x in results if x.invoice_type == invoice_type]
+        results.sort(key=lambda x: x.created_at, reverse=True)
+        offset = (page - 1) * limit
+        return results[offset : offset + limit]
+
     offset = (page - 1) * limit
     with engine.begin() as conn:
         params: dict = {"company_id": str(current_context.company_id), "limit": limit, "offset": offset}
@@ -276,36 +406,119 @@ async def list_invoices(
 
         rows = conn.execute(
             text(
-                f"SELECT invoice_id, invoice_number, invoice_type, status, invoice_grand_total, paid_amount, balance_due, created_at "
+                f"SELECT invoice_id, invoice_number, invoice_type, invoice_date, due_date, billing_party_id, shipping_party_id, "
+                f"currency, exchange_rate, invoice_subtotal, invoice_total_gst, invoice_total_tds, invoice_total_tcs, "
+                f"invoice_grand_total, paid_amount, balance_due, status, created_at, meta "
                 f"FROM invoices WHERE {where} ORDER BY created_at DESC LIMIT :limit OFFSET :offset"
             ),
             params,
         ).fetchall()
+        
         result = []
         for r in rows:
             d = dict(r._mapping) if hasattr(r, "_mapping") else dict(r)
+            meta = d.get("meta") or {}
+            if isinstance(meta, str):
+                try:
+                    meta = json.loads(meta)
+                except Exception:
+                    meta = {}
+            
+            d["order_number"] = meta.get("order_number")
+            d["salesperson_id"] = meta.get("salesperson_id")
+            d["subject"] = meta.get("subject")
+            d["customer_notes"] = meta.get("customer_notes")
+            d["terms_and_conditions"] = meta.get("terms_and_conditions")
+            d["invoice_subtotal"] = float(d["invoice_subtotal"])
+            d["invoice_total_gst"] = float(d["invoice_total_gst"])
+            d["invoice_total_tds"] = float(d["invoice_total_tds"])
+            d["invoice_total_tcs"] = float(d["invoice_total_tcs"])
+            d["invoice_grand_total"] = float(d["invoice_grand_total"])
+            d["paid_amount"] = float(d["paid_amount"])
+            d["balance_due"] = float(d["balance_due"])
+            d["exchange_rate"] = float(d["exchange_rate"])
             result.append(InvoiceResponse(**d))
         return result
 
 
 @router.get("/{invoice_id}", response_model=InvoiceResponse)
 async def get_invoice(invoice_id: UUID, current_context: TenantContext = Depends(get_current_context)):
+    if os.getenv('FINOPS_USE_DATABASE', 'true').lower() == 'false':
+        return get_or_create_mock_invoice(invoice_id)
+
     with engine.begin() as conn:
         row = conn.execute(
             text(
-                "SELECT invoice_id, invoice_number, invoice_type, status, invoice_grand_total, paid_amount, balance_due, created_at "
+                "SELECT invoice_id, invoice_number, invoice_type, invoice_date, due_date, billing_party_id, shipping_party_id, "
+                "currency, exchange_rate, invoice_subtotal, invoice_total_gst, invoice_total_tds, invoice_total_tcs, "
+                "invoice_grand_total, paid_amount, balance_due, status, created_at, meta "
                 "FROM invoices WHERE invoice_id = :invoice_id AND company_id = :company_id AND is_deleted = FALSE"
             ),
             {"invoice_id": str(invoice_id), "company_id": str(current_context.company_id)},
         ).fetchone()
+        
         if row is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
+        
         d = dict(row._mapping) if hasattr(row, "_mapping") else dict(row)
+        meta = d.get("meta") or {}
+        if isinstance(meta, str):
+            try:
+                meta = json.loads(meta)
+            except Exception:
+                meta = {}
+        
+        d["order_number"] = meta.get("order_number")
+        d["salesperson_id"] = meta.get("salesperson_id")
+        d["subject"] = meta.get("subject")
+        d["customer_notes"] = meta.get("customer_notes")
+        d["terms_and_conditions"] = meta.get("terms_and_conditions")
+        d["invoice_subtotal"] = float(d["invoice_subtotal"])
+        d["invoice_total_gst"] = float(d["invoice_total_gst"])
+        d["invoice_total_tds"] = float(d["invoice_total_tds"])
+        d["invoice_total_tcs"] = float(d["invoice_total_tcs"])
+        d["invoice_grand_total"] = float(d["invoice_grand_total"])
+        d["paid_amount"] = float(d["paid_amount"])
+        d["balance_due"] = float(d["balance_due"])
+        d["exchange_rate"] = float(d["exchange_rate"])
+
+        # Query all items
+        item_rows = conn.execute(
+            text(
+                "SELECT invoice_item_id, invoice_id, company_id, line_number, description, hsn_sac, account_id, quantity, unit_price, discount_amount, taxable_amount, gst_rate, gst_amount, tds_rate, tds_amount, tcs_rate, tcs_amount, total_amount "
+                "FROM invoice_items WHERE invoice_id = :invoice_id AND company_id = :company_id ORDER BY line_number"
+            ),
+            {"invoice_id": str(invoice_id), "company_id": str(current_context.company_id)},
+        ).fetchall()
+        
+        items = []
+        for r in item_rows:
+            idict = dict(r._mapping) if hasattr(r, "_mapping") else dict(r)
+            idict["quantity"] = float(idict["quantity"])
+            idict["unit_price"] = float(idict["unit_price"])
+            idict["discount_amount"] = float(idict["discount_amount"])
+            idict["taxable_amount"] = float(idict["taxable_amount"])
+            idict["gst_rate"] = float(idict["gst_rate"])
+            idict["gst_amount"] = float(idict["gst_amount"])
+            idict["tds_rate"] = float(idict["tds_rate"])
+            idict["tds_amount"] = float(idict["tds_amount"])
+            idict["tcs_rate"] = float(idict["tcs_rate"])
+            idict["tcs_amount"] = float(idict["tcs_amount"])
+            idict["total_amount"] = float(idict["total_amount"])
+            items.append(idict)
+            
+        d["items"] = items
         return InvoiceResponse(**d)
 
 
 @router.delete("/{invoice_id}")
 async def delete_invoice(invoice_id: UUID, current_context: TenantContext = Depends(get_current_context)):
+    if os.getenv('FINOPS_USE_DATABASE', 'true').lower() == 'false':
+        if invoice_id in MOCK_INVOICES:
+            del MOCK_INVOICES[invoice_id]
+            return {"success": True}
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
+
     with engine.begin() as conn:
         updated = conn.execute(
             text(
@@ -320,7 +533,6 @@ async def delete_invoice(invoice_id: UUID, current_context: TenantContext = Depe
 
 
 def _minimal_invoice_pdf(invoice_number: str) -> bytes:
-    # Minimal valid PDF with a single line of text. No external dependencies.
     text_line = f"Invoice {invoice_number}"
     content = f"BT /F1 18 Tf 72 720 Td ({text_line}) Tj ET"
     objects: list[bytes] = []
@@ -352,6 +564,12 @@ def _minimal_invoice_pdf(invoice_number: str) -> bytes:
 
 @router.get("/{invoice_id}/pdf")
 async def get_invoice_pdf(invoice_id: UUID, current_context: TenantContext = Depends(get_current_context)):
+    if os.getenv('FINOPS_USE_DATABASE', 'true').lower() == 'false':
+        inv = get_or_create_mock_invoice(invoice_id)
+        pdf_bytes = _minimal_invoice_pdf(inv.invoice_number)
+        headers = {"Content-Disposition": f'inline; filename="{inv.invoice_number}.pdf"'}
+        return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
+
     with engine.begin() as conn:
         row = conn.execute(
             text(
@@ -376,6 +594,17 @@ async def allocate_payment(
     idempotency_key: UUID = Header(..., alias='Idempotency-Key'),
     current_context: TenantContext = Depends(get_current_context)
 ):
+    if os.getenv('FINOPS_USE_DATABASE', 'true').lower() == 'false':
+        inv = get_or_create_mock_invoice(invoice_id)
+        if inv.status not in ('posted', 'partial'):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Invoice must be posted before payment allocation')
+        
+        allocated = float(payload.allocated_amount)
+        inv.paid_amount = round(inv.paid_amount + allocated, 2)
+        inv.balance_due = round(max(0.0, inv.invoice_grand_total - inv.paid_amount), 2)
+        inv.status = 'paid' if inv.balance_due <= 0 else 'partial'
+        return inv
+
     with engine.begin() as conn:
         invoice = conn.execute(
             text('SELECT invoice_grand_total, paid_amount, status FROM invoices WHERE invoice_id = :invoice_id AND company_id = :company_id'),
@@ -400,23 +629,4 @@ async def allocate_payment(
             }
         )
 
-        updated = conn.execute(
-            text('SELECT invoice_id, invoice_number, invoice_type, invoice_grand_total, paid_amount, balance_due, status, created_at FROM invoices WHERE invoice_id = :invoice_id'),
-            {'invoice_id': str(invoice_id)}
-        ).fetchone()
-        if updated is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Invoice not found after payment allocation')
-        invoice_dict = dict(updated._mapping) if hasattr(updated, '_mapping') else dict(updated)
-        return InvoiceResponse(**invoice_dict)
-
-
-@router.get("/{invoice_id}", response_model=InvoiceResponse)
-async def get_invoice(invoice_id: UUID, current_context: TenantContext = Depends(get_current_context)):
-    with engine.connect() as conn:
-        invoice = conn.execute(
-            text('SELECT invoice_id, invoice_number, invoice_type, invoice_grand_total, paid_amount, balance_due, status, created_at FROM invoices WHERE invoice_id = :invoice_id AND company_id = :company_id'),
-            {'invoice_id': str(invoice_id), 'company_id': str(current_context.company_id)}
-        ).fetchone()
-        if invoice is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Invoice not found')
-        return InvoiceResponse(**dict(invoice._mapping) if hasattr(invoice, '_mapping') else dict(invoice))
+        return await get_invoice(invoice_id=invoice_id, current_context=current_context)

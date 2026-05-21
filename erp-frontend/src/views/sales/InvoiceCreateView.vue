@@ -47,6 +47,31 @@
               </option>
             </select>
           </label>
+          <label>
+            <div class="label">Order Number (optional)</div>
+            <input v-model="form.order_number" class="input" placeholder="PO-001" />
+          </label>
+          <label>
+            <div class="label">Salesperson (optional)</div>
+            <select v-model="form.salesperson_id" class="input">
+              <option value="">Select salesperson…</option>
+              <option v-for="c in contacts" :key="c.contact_id" :value="c.contact_id">
+                {{ c.name }}
+              </option>
+            </select>
+          </label>
+          <label class="span2">
+            <div class="label">Subject (optional)</div>
+            <input v-model="form.subject" class="input" placeholder="Invoice subject/title" />
+          </label>
+          <label class="span2">
+            <div class="label">Customer Notes (optional)</div>
+            <textarea v-model="form.customer_notes" class="input input-textarea" placeholder="Thank you for your business..." rows="3"></textarea>
+          </label>
+          <label class="span2">
+            <div class="label">Terms & Conditions (optional)</div>
+            <textarea v-model="form.terms_and_conditions" class="input input-textarea" placeholder="Payment terms, delivery terms, etc." rows="3"></textarea>
+          </label>
         </div>
       </Card>
 
@@ -141,6 +166,11 @@ const form = reactive({
   due_date: '',
   billing_party_id: '',
   shipping_party_id: '',
+  order_number: '',
+  salesperson_id: '',
+  subject: '',
+  customer_notes: '',
+  terms_and_conditions: '',
   currency: 'INR',
   exchange_rate: 1,
   items: [
@@ -208,6 +238,11 @@ const createInvoice = async () => {
       due_date: form.due_date || null,
       billing_party_id: form.billing_party_id,
       shipping_party_id: form.shipping_party_id || null,
+      order_number: form.order_number || null,
+      salesperson_id: form.salesperson_id || null,
+      subject: form.subject || null,
+      customer_notes: form.customer_notes || null,
+      terms_and_conditions: form.terms_and_conditions || null,
       currency: form.currency || 'INR',
       exchange_rate: form.exchange_rate || 1,
       items: form.items.map((it) => ({
@@ -229,7 +264,10 @@ const createInvoice = async () => {
     toast.success(`Created ${created.invoice_number}`)
     router.push({ name: 'InvoiceDetail', params: { invoiceId: created.invoice_id } })
   } catch (e) {
-    toast.error('Create failed')
+    const message = Array.isArray(e?.response?.data?.detail)
+      ? e.response.data.detail.map((item) => item.msg || item).join(', ')
+      : e?.response?.data?.detail || e?.message || 'Create failed'
+    toast.error(message)
   } finally {
     saving.value = false
   }
@@ -272,6 +310,12 @@ const createInvoice = async () => {
   outline: none;
   background: #fff;
   width: 100%;
+}
+.input-textarea {
+  height: auto;
+  padding: 10px;
+  font-family: inherit;
+  resize: vertical;
 }
 .items-head {
   display: flex;

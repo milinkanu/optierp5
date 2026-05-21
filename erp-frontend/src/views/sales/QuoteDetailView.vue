@@ -1,39 +1,36 @@
 <template>
   <div class="page">
-    <PageHeader :title="invoice ? invoice.invoice_number : 'Invoice'" subtitle="View invoice details, view PDF preview, and post/delete invoices.">
+    <PageHeader :title="quote ? quote.quote_number : 'Quote'" subtitle="View quote details, track logs, and convert to orders/invoices.">
       <template #actions>
-        <Button variant="secondary" @click="$router.push({ name: 'Invoices' })">Back</Button>
-        <Button variant="secondary" :disabled="!invoice" @click="openPdf">Open PDF</Button>
-        <Button v-if="invoice?.status === 'draft'" :disabled="posting" :loading="posting" @click="postInvoice">
-          Post
+        <Button variant="secondary" @click="$router.push({ name: 'Quotes' })">Back</Button>
+        <Button v-if="quote && (quote.status === 'draft' || quote.status === 'sent')" variant="secondary" @click="$router.push({ name: 'QuoteEdit', params: { quoteId: quote.quote_id } })">
+          Edit
         </Button>
-        <Button v-if="invoice?.status === 'draft'" variant="danger" :disabled="deleting" :loading="deleting" @click="remove">
+        <Button v-if="quote && quote.status === 'draft'" variant="danger" @click="removeQuote">
           Delete
         </Button>
+        
+        <!-- Conversion Actions -->
+        <span v-if="quote && quote.status !== 'converted'" class="convert-actions">
+          <Button variant="secondary" :loading="convertingSO" @click="convertToSalesOrder">Convert to SO</Button>
+          <Button :loading="convertingInvoice" @click="convertToInvoice">Convert to Invoice</Button>
+        </span>
       </template>
     </PageHeader>
 
-    <div v-if="loading" class="muted loading-box">Loading invoice details…</div>
-    <div v-else-if="!invoice" class="muted loading-box">Invoice not found.</div>
+    <div v-if="loading" class="muted loading-box">Loading quote details…</div>
+    <div v-else-if="!quote" class="muted loading-box">Quote not found.</div>
     <div v-else class="detail-layout">
       <!-- Left sidebar: summary metadata -->
       <div class="detail-sidebar">
         <Card class="card metadata-card">
-          <div class="section-title">Invoice Overview</div>
+          <div class="section-title">Quote Overview</div>
           <div class="overview-list">
-            <div class="kv">
-              <span class="k">Status</span>
-              <span class="v status-badge" :class="invoice.status.toLowerCase()">
-                {{ invoice.status === 'partial' ? 'Partial' : invoice.status }}
-              </span>
-            </div>
-            <div class="kv">
-              <span class="k">Type</span>
-              <span class="v pill font-semibold">{{ invoice.invoice_type === 'sales_invoice' ? 'Sales' : 'Purchase' }}</span>
-            </div>
-            <div class="kv"><span class="k">Date</span><span class="v mono">{{ formatDate(invoice.invoice_date) }}</span></div>
-            <div class="kv"><span class="k">Due Date</span><span class="v mono">{{ formatDate(invoice.due_date) }}</span></div>
-            <div class="kv"><span class="k">Order Number</span><span class="v mono">{{ invoice.order_number || '—' }}</span></div>
+            <div class="kv"><span class="k">Status</span><span class="v status-badge" :class="quote.status.toLowerCase()">{{ quote.status }}</span></div>
+            <div class="kv"><span class="k">Date</span><span class="v mono">{{ formatDate(quote.quote_date) }}</span></div>
+            <div class="kv"><span class="k">Expiry Date</span><span class="v mono">{{ formatDate(quote.expiry_date) }}</span></div>
+            <div class="kv"><span class="k">Reference#</span><span class="v">{{ quote.reference_number || '—' }}</span></div>
+            <div class="kv"><span class="k">Project Name</span><span class="v">{{ quote.project_name || '—' }}</span></div>
             <div class="kv"><span class="k">Salesperson</span><span class="v">{{ salespersonName }}</span></div>
           </div>
         </Card>
@@ -61,8 +58,8 @@
               <div class="brand-sub">Financial Operating System</div>
             </div>
             <div class="doc-type-label">
-              <h1>TAX INVOICE</h1>
-              <div class="doc-num mono">{{ invoice.invoice_number }}</div>
+              <h1>QUOTE</h1>
+              <div class="doc-num mono">{{ quote.quote_number }}</div>
             </div>
           </div>
 
@@ -75,22 +72,22 @@
 
             <div class="meta-block text-right">
               <div class="kv-row">
-                <span class="meta-k">Invoice Date:</span>
-                <span class="meta-v mono">{{ formatDate(invoice.invoice_date) }}</span>
+                <span class="meta-k">Quote Date:</span>
+                <span class="meta-v mono">{{ formatDate(quote.quote_date) }}</span>
               </div>
-              <div class="kv-row" v-if="invoice.due_date">
-                <span class="meta-k">Due Date:</span>
-                <span class="meta-v mono">{{ formatDate(invoice.due_date) }}</span>
+              <div class="kv-row" v-if="quote.expiry_date">
+                <span class="meta-k">Expiry Date:</span>
+                <span class="meta-v mono">{{ formatDate(quote.expiry_date) }}</span>
               </div>
-              <div class="kv-row" v-if="invoice.order_number">
-                <span class="meta-k">Order Number:</span>
-                <span class="meta-v mono">{{ invoice.order_number }}</span>
+              <div class="kv-row" v-if="quote.reference_number">
+                <span class="meta-k">Reference#:</span>
+                <span class="meta-v">{{ quote.reference_number }}</span>
               </div>
             </div>
           </div>
 
-          <div class="paper-subject" v-if="invoice.subject">
-            <strong>Subject:</strong> {{ invoice.subject }}
+          <div class="paper-subject" v-if="quote.subject">
+            <strong>Subject:</strong> {{ quote.subject }}
           </div>
 
           <div class="paper-items">
@@ -107,11 +104,11 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(it, idx) in invoice.items" :key="it.invoice_item_id || idx">
+                <tr v-for="(it, idx) in quote.items" :key="it.quote_item_id || idx">
                   <td style="text-align: center;" class="muted">{{ idx + 1 }}</td>
                   <td>
-                    <div class="item-desc font-bold">{{ it.description }}</div>
-                    <div class="item-sub-desc text-xs muted" v-if="it.hsn_sac">HSN/SAC: {{ it.hsn_sac }}</div>
+                    <div class="item-desc font-bold">{{ getItemName(it.inventory_item_id) || it.description }}</div>
+                    <div class="item-sub-desc text-xs muted" v-if="getItemName(it.inventory_item_id)">{{ it.description }}</div>
                   </td>
                   <td style="text-align: right;" class="mono">{{ it.quantity }}</td>
                   <td style="text-align: right;" class="mono">₹{{ fmt(it.unit_price) }}</td>
@@ -125,51 +122,30 @@
 
           <div class="paper-totals">
             <div class="totals-table">
-              <div class="total-row">
-                <span class="tk">Sub Total:</span>
-                <span class="tv mono">₹{{ fmt(invoice.invoice_subtotal) }}</span>
+              <div class="total-row"><span class="tk">Sub Total:</span><span class="tv mono">₹{{ fmt(quote.subtotal) }}</span></div>
+              <div class="total-row" v-if="quote.discount_amount > 0">
+                <span class="tk">Discount ({{ quote.discount_percentage }}%):</span>
+                <span class="tv mono">- ₹{{ fmt(quote.discount_amount) }}</span>
               </div>
-              <div class="total-row" v-if="totalItemDiscount > 0">
-                <span class="tk">Discount Amount:</span>
-                <span class="tv mono">- ₹{{ fmt(totalItemDiscount) }}</span>
-              </div>
-              <div class="total-row">
-                <span class="tk">GST Total:</span>
-                <span class="tv mono">₹{{ fmt(invoice.invoice_total_gst) }}</span>
-              </div>
-              <div class="total-row" v-if="invoice.invoice_total_tds > 0">
-                <span class="tk">TDS Total:</span>
-                <span class="tv mono">- ₹{{ fmt(invoice.invoice_total_tds) }}</span>
-              </div>
-              <div class="total-row" v-if="invoice.invoice_total_tcs > 0">
-                <span class="tk">TCS Total:</span>
-                <span class="tv mono">+ ₹{{ fmt(invoice.invoice_total_tcs) }}</span>
-              </div>
+              <div class="total-row"><span class="tk">GST Total:</span><span class="tv mono">₹{{ fmt(quote.total_gst) }}</span></div>
+              <div class="total-row" v-if="quote.total_tds > 0"><span class="tk">TDS Total:</span><span class="tv mono">- ₹{{ fmt(quote.total_tds) }}</span></div>
+              <div class="total-row" v-if="quote.total_tcs > 0"><span class="tk">TCS Total:</span><span class="tv mono">+ ₹{{ fmt(quote.total_tcs) }}</span></div>
+              <div class="total-row" v-if="quote.adjustment !== 0"><span class="tk">Adjustment:</span><span class="tv mono">₹{{ fmt(quote.adjustment) }}</span></div>
               <div class="total-row grand-total-row">
-                <span class="tk">Grand Total:</span>
-                <span class="tv mono">₹{{ fmt(invoice.invoice_grand_total) }}</span>
-              </div>
-              
-              <!-- Payment Allocation details -->
-              <div class="total-row payment-row" style="margin-top: 10px;">
-                <span class="tk font-semibold" style="color: #059669;">Paid Amount:</span>
-                <span class="tv mono font-semibold" style="color: #059669;">₹{{ fmt(invoice.paid_amount) }}</span>
-              </div>
-              <div class="total-row payment-row">
-                <span class="tk font-bold" style="color: #dc2626;">Balance Due:</span>
-                <span class="tv mono font-bold" style="color: #dc2626;">₹{{ fmt(invoice.balance_due) }}</span>
+                <span class="tk">Total:</span>
+                <span class="tv mono">₹{{ fmt(quote.grand_total) }}</span>
               </div>
             </div>
           </div>
 
-          <div class="paper-footer" v-if="invoice.customer_notes || invoice.terms_and_conditions">
-            <div class="footer-section" v-if="invoice.customer_notes">
+          <div class="paper-footer" v-if="quote.customer_notes || quote.terms_and_conditions">
+            <div class="footer-section" v-if="quote.customer_notes">
               <div class="footer-title">Customer Notes</div>
-              <p class="footer-text">{{ invoice.customer_notes }}</p>
+              <p class="footer-text">{{ quote.customer_notes }}</p>
             </div>
-            <div class="footer-section" v-if="invoice.terms_and_conditions">
+            <div class="footer-section" v-if="quote.terms_and_conditions">
               <div class="footer-title">Terms & Conditions</div>
-              <p class="footer-text">{{ invoice.terms_and_conditions }}</p>
+              <p class="footer-text">{{ quote.terms_and_conditions }}</p>
             </div>
           </div>
         </Card>
@@ -181,8 +157,9 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useItemsStore } from '../../stores/items'
 import { useToastStore } from '../../stores/toast'
-import { invoicesApi } from '../../api/invoices'
+import { quotesApi } from '../../api/quotes'
 import { contactsApi } from '../../api/contacts'
 import Button from '../../components/ui/Button.vue'
 import Card from '../../components/ui/Card.vue'
@@ -191,20 +168,21 @@ import PageHeader from '../../components/ui/PageHeader.vue'
 const route = useRoute()
 const router = useRouter()
 const toast = useToastStore()
+const itemsStore = useItemsStore()
 
-const loading = ref(false)
-const invoice = ref(null)
-const posting = ref(false)
-const deleting = ref(false)
+const quote = ref(null)
 const contacts = ref([])
+const loading = ref(false)
+const convertingSO = ref(false)
+const convertingInvoice = ref(false)
 
 const load = async () => {
   loading.value = true
   try {
-    invoice.value = await invoicesApi.get(route.params.invoiceId)
+    quote.value = await quotesApi.get(route.params.quoteId)
   } catch (e) {
-    invoice.value = null
-    toast.error('Failed to load invoice details')
+    quote.value = null
+    toast.error('Failed to load quote details')
   } finally {
     loading.value = false
   }
@@ -219,25 +197,27 @@ const loadContacts = async () => {
 }
 
 onMounted(async () => {
+  await itemsStore.fetchList({ page: 1, limit: 500, is_active: true })
   await loadContacts()
   await load()
 })
 
 const billingParty = computed(() => {
-  if (!invoice.value) return null
-  return contacts.value.find(c => c.contact_id === invoice.value.billing_party_id) || null
+  if (!quote.value) return null
+  return contacts.value.find(c => c.contact_id === quote.value.billing_party_id) || null
 })
 
 const salespersonName = computed(() => {
-  if (!invoice.value || !invoice.value.salesperson_id) return '—'
-  const contact = contacts.value.find(c => c.contact_id === invoice.value.salesperson_id)
+  if (!quote.value || !quote.value.salesperson_id) return '—'
+  const contact = contacts.value.find(c => c.contact_id === quote.value.salesperson_id)
   return contact ? contact.name : '—'
 })
 
-const totalItemDiscount = computed(() => {
-  if (!invoice.value || !invoice.value.items) return 0
-  return invoice.value.items.reduce((sum, item) => sum + (item.discount_amount || 0), 0)
-})
+const getItemName = (itemId) => {
+  if (!itemId) return null
+  const item = itemsStore.items.find(i => i.inventory_item_id === itemId)
+  return item ? item.item_name : null
+}
 
 const fmt = (n) => Number(n || 0).toFixed(2)
 const formatDate = (d) => {
@@ -249,43 +229,42 @@ const formatDate = (d) => {
   })
 }
 
-const openPdf = async () => {
+const removeQuote = async () => {
+  if (!confirm('Are you sure you want to delete this draft quote?')) return
   try {
-    const blob = await invoicesApi.pdf(route.params.invoiceId)
-    const url = URL.createObjectURL(blob)
-    window.open(url, '_blank', 'noopener,noreferrer')
-    setTimeout(() => URL.revokeObjectURL(url), 30_000)
+    await quotesApi.remove(quote.value.quote_id)
+    toast.success('Quote deleted successfully')
+    router.push({ name: 'Quotes' })
   } catch (e) {
-    toast.error('Failed to load PDF')
+    toast.error('Failed to delete quote')
   }
 }
 
-const postInvoice = async () => {
-  if (!confirm('Are you sure you want to post this invoice? This will finalize all details.')) return
-  posting.value = true
+const convertToSalesOrder = async () => {
+  if (!confirm('Convert this Quote into a Sales Order?')) return
+  convertingSO.value = true
   try {
-    const key = crypto.randomUUID()
-    invoice.value = await invoicesApi.post(route.params.invoiceId, { idempotencyKey: key })
-    toast.success('Invoice posted successfully')
-    await load()
+    const res = await quotesApi.convertToSalesOrder(quote.value.quote_id)
+    toast.success(`Successfully converted to Sales Order: ${res.sales_order_number}`)
+    router.push({ name: 'SalesOrderDetail', params: { salesOrderId: res.sales_order_id } })
   } catch (e) {
-    toast.error(e?.response?.data?.detail || 'Failed to post invoice')
+    toast.error(e?.response?.data?.detail || 'Failed to convert to Sales Order')
   } finally {
-    posting.value = false
+    convertingSO.value = false
   }
 }
 
-const remove = async () => {
-  if (!confirm('Are you sure you want to delete this invoice?')) return
-  deleting.value = true
+const convertToInvoice = async () => {
+  if (!confirm('Convert this Quote into a standard Tax Invoice?')) return
+  convertingInvoice.value = true
   try {
-    await invoicesApi.remove(route.params.invoiceId)
-    toast.success('Invoice deleted successfully')
-    router.push({ name: 'Invoices' })
+    const res = await quotesApi.convertToInvoice(quote.value.quote_id)
+    toast.success('Successfully converted to standard Tax Invoice')
+    router.push({ name: 'InvoiceDetail', params: { invoiceId: res.invoice_id } })
   } catch (e) {
-    toast.error(e?.response?.data?.detail || 'Failed to delete invoice')
+    toast.error(e?.response?.data?.detail || 'Failed to convert to standard Tax Invoice')
   } finally {
-    deleting.value = false
+    convertingInvoice.value = false
   }
 }
 </script>
@@ -294,6 +273,11 @@ const remove = async () => {
 .page {
   max-width: 1250px;
   margin: 0 auto;
+}
+.convert-actions {
+  display: inline-flex;
+  gap: 8px;
+  margin-left: 8px;
 }
 .loading-box {
   padding: 40px;
@@ -348,9 +332,6 @@ const remove = async () => {
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
-.pill {
-  text-transform: capitalize;
-}
 .status-badge {
   display: inline-flex;
   padding: 2px 6px;
@@ -360,10 +341,11 @@ const remove = async () => {
   text-transform: uppercase;
 }
 .status-badge.draft { background-color: #f1f5f9; color: #475569; }
-.status-badge.posted { background-color: #dbeafe; color: #2563eb; }
-.status-badge.paid { background-color: #d1fae5; color: #059669; }
-.status-badge.partial { background-color: #ede9fe; color: #7c3aed; }
-.status-badge.overdue { background-color: #fee2e2; color: #dc2626; }
+.status-badge.sent { background-color: #dbeafe; color: #2563eb; }
+.status-badge.accepted { background-color: #d1fae5; color: #059669; }
+.status-badge.rejected { background-color: #fee2e2; color: #dc2626; }
+.status-badge.expired { background-color: #fef3c7; color: #d97706; }
+.status-badge.converted { background-color: #ede9fe; color: #7c3aed; }
 
 .customer-info {
   display: grid;
@@ -533,10 +515,6 @@ const remove = async () => {
   padding-top: 10px;
   margin-top: 4px;
 }
-.payment-row {
-  border-top: 1px solid #f1f5f9;
-  padding-top: 8px;
-}
 .paper-footer {
   margin-top: 40px;
   border-top: 1px solid #e2e8f0;
@@ -558,9 +536,6 @@ const remove = async () => {
   line-height: 1.5;
   white-space: pre-line;
 }
-.muted {
-  color: #64748b;
-}
 
 @media (max-width: 900px) {
   .detail-layout {
@@ -568,4 +543,3 @@ const remove = async () => {
   }
 }
 </style>
-

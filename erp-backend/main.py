@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import traceback
 
-from routes import auth, companies, health, invoices, onboarding, transactions
+from routes import auth, companies, health, invoices, onboarding, transactions, quotes, sales_orders
 from routes import chart_of_accounts, contacts, items
 from routes.inspector import router as inspector_router
 
@@ -31,8 +31,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from fastapi.exceptions import HTTPException as FastAPIHTTPException, RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request, exc: Exception):
+    if isinstance(exc, (FastAPIHTTPException, StarletteHTTPException)):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers=getattr(exc, "headers", None),
+        )
+    if isinstance(exc, RequestValidationError):
+        return JSONResponse(
+            status_code=422,
+            content={"detail": exc.errors(), "body": exc.body},
+        )
     # Ensure we return JSON (and still pass through CORS middleware) during dev.
     return JSONResponse(
         status_code=500,
@@ -53,6 +67,8 @@ app.include_router(transactions.router)
 app.include_router(chart_of_accounts.router)
 app.include_router(contacts.router)
 app.include_router(items.router)
+app.include_router(quotes.router)
+app.include_router(sales_orders.router)
 app.include_router(inspector_router)
 
 if __name__ == '__main__':

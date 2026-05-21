@@ -189,3 +189,221 @@ class InventoryItem(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+import enum
+from sqlalchemy import Enum as SQLEnum
+
+class QuoteStatus(str, enum.Enum):
+    draft = "draft"
+    sent = "sent"
+    accepted = "accepted"
+    rejected = "rejected"
+    expired = "expired"
+    converted = "converted"
+
+class SalesOrderStatus(str, enum.Enum):
+    draft = "draft"
+    confirmed = "confirmed"
+    partially_invoiced = "partially_invoiced"
+    invoiced = "invoiced"
+    cancelled = "cancelled"
+
+
+class Quote(Base):
+    __tablename__ = "quotes"
+
+    quote_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.company_id"), nullable=False, index=True)
+    quote_number = Column(String, nullable=False)
+    quote_date = Column(Date, nullable=False)
+    expiry_date = Column(Date)
+    billing_party_id = Column(UUID(as_uuid=True), ForeignKey("parties.party_id"), nullable=False)
+    shipping_party_id = Column(UUID(as_uuid=True), ForeignKey("parties.party_id"))
+    reference_number = Column(String)
+    salesperson_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"))
+    project_name = Column(String)
+    subject = Column(String)
+    customer_notes = Column(Text)
+    terms_and_conditions = Column(Text)
+    status = Column(SQLEnum(QuoteStatus, name="quote_status_enum", create_type=False), nullable=False, default=QuoteStatus.draft)
+    currency = Column(String, nullable=False, default="INR")
+    exchange_rate = Column(Numeric(18, 8), nullable=False, default=1.0)
+    is_deleted = Column(Boolean, nullable=False, default=False)
+    subtotal = Column(Numeric(18, 2), nullable=False, default=0.0)
+    total_gst = Column(Numeric(18, 2), nullable=False, default=0.0)
+    total_tds = Column(Numeric(18, 2), nullable=False, default=0.0)
+    total_tcs = Column(Numeric(18, 2), nullable=False, default=0.0)
+    adjustment = Column(Numeric(18, 2), nullable=False, default=0.0)
+    discount_percentage = Column(Numeric(5, 2), nullable=False, default=0.0)
+    discount_amount = Column(Numeric(18, 2), nullable=False, default=0.0)
+    grand_total = Column(Numeric(18, 2), nullable=False, default=0.0)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
+    updated_by = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    company = relationship("Company")
+    billing_party = relationship("Party", foreign_keys=[billing_party_id])
+    shipping_party = relationship("Party", foreign_keys=[shipping_party_id])
+    salesperson = relationship("User", foreign_keys=[salesperson_id])
+    items = relationship("QuoteItem", back_populates="quote", cascade="all, delete-orphan")
+
+
+class QuoteItem(Base):
+    __tablename__ = "quote_items"
+
+    quote_item_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    quote_id = Column(UUID(as_uuid=True), ForeignKey("quotes.quote_id", ondelete="CASCADE"), nullable=False)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.company_id"), nullable=False, index=True)
+    line_number = Column(Integer, nullable=False)
+    description = Column(Text, nullable=False)
+    inventory_item_id = Column(UUID(as_uuid=True), ForeignKey("inventory_items.inventory_item_id"))
+    quantity = Column(Numeric(18, 4), nullable=False)
+    unit_price = Column(Numeric(18, 4), nullable=False)
+    discount_amount = Column(Numeric(18, 2), nullable=False, default=0.0)
+    taxable_amount = Column(Numeric(18, 2), nullable=False)
+    gst_rate = Column(Numeric(5, 2), nullable=False)
+    gst_amount = Column(Numeric(18, 2), nullable=False)
+    tds_rate = Column(Numeric(5, 2), nullable=False, default=0.0)
+    tds_amount = Column(Numeric(18, 2), nullable=False, default=0.0)
+    tcs_rate = Column(Numeric(5, 2), nullable=False, default=0.0)
+    tcs_amount = Column(Numeric(18, 2), nullable=False, default=0.0)
+    total_amount = Column(Numeric(18, 2), nullable=False)
+    is_deleted = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    quote = relationship("Quote", back_populates="items")
+    inventory_item = relationship("InventoryItem")
+
+
+class QuoteActivityLog(Base):
+    __tablename__ = "quote_activity_logs"
+
+    activity_log_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    quote_id = Column(UUID(as_uuid=True), ForeignKey("quotes.quote_id", ondelete="CASCADE"), nullable=False)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.company_id"), nullable=False)
+    actor_user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
+    action = Column(String, nullable=False)
+    previous_value = Column(JSON)
+    new_value = Column(JSON)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    actor = relationship("User")
+
+
+class QuoteAttachment(Base):
+    __tablename__ = "quote_attachments"
+
+    attachment_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    quote_id = Column(UUID(as_uuid=True), ForeignKey("quotes.quote_id", ondelete="CASCADE"), nullable=False)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.company_id"), nullable=False)
+    file_name = Column(String, nullable=False)
+    file_path = Column(String, nullable=False)
+    file_size = Column(Integer, nullable=False)
+    mime_type = Column(String)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class SalesOrder(Base):
+    __tablename__ = "sales_orders"
+
+    sales_order_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.company_id"), nullable=False, index=True)
+    sales_order_number = Column(String, nullable=False)
+    sales_order_date = Column(Date, nullable=False)
+    expected_shipment_date = Column(Date)
+    billing_party_id = Column(UUID(as_uuid=True), ForeignKey("parties.party_id"), nullable=False)
+    shipping_party_id = Column(UUID(as_uuid=True), ForeignKey("parties.party_id"))
+    reference_number = Column(String)
+    payment_terms = Column(String)
+    salesperson_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"))
+    subject = Column(String)
+    customer_notes = Column(Text)
+    terms_and_conditions = Column(Text)
+    status = Column(SQLEnum(SalesOrderStatus, name="sales_order_status_enum", create_type=False), nullable=False, default=SalesOrderStatus.draft)
+    currency = Column(String, nullable=False, default="INR")
+    exchange_rate = Column(Numeric(18, 8), nullable=False, default=1.0)
+    is_deleted = Column(Boolean, nullable=False, default=False)
+    subtotal = Column(Numeric(18, 2), nullable=False, default=0.0)
+    total_gst = Column(Numeric(18, 2), nullable=False, default=0.0)
+    total_tds = Column(Numeric(18, 2), nullable=False, default=0.0)
+    total_tcs = Column(Numeric(18, 2), nullable=False, default=0.0)
+    adjustment = Column(Numeric(18, 2), nullable=False, default=0.0)
+    discount_percentage = Column(Numeric(5, 2), nullable=False, default=0.0)
+    discount_amount = Column(Numeric(18, 2), nullable=False, default=0.0)
+    grand_total = Column(Numeric(18, 2), nullable=False, default=0.0)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
+    updated_by = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    quote_id = Column(UUID(as_uuid=True), ForeignKey("quotes.quote_id"))
+
+    # Relationships
+    company = relationship("Company")
+    billing_party = relationship("Party", foreign_keys=[billing_party_id])
+    shipping_party = relationship("Party", foreign_keys=[shipping_party_id])
+    salesperson = relationship("User", foreign_keys=[salesperson_id])
+    quote = relationship("Quote")
+    items = relationship("SalesOrderItem", back_populates="sales_order", cascade="all, delete-orphan")
+
+
+class SalesOrderItem(Base):
+    __tablename__ = "sales_order_items"
+
+    sales_order_item_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    sales_order_id = Column(UUID(as_uuid=True), ForeignKey("sales_orders.sales_order_id", ondelete="CASCADE"), nullable=False)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.company_id"), nullable=False, index=True)
+    line_number = Column(Integer, nullable=False)
+    description = Column(Text, nullable=False)
+    inventory_item_id = Column(UUID(as_uuid=True), ForeignKey("inventory_items.inventory_item_id"))
+    quantity = Column(Numeric(18, 4), nullable=False)
+    unit_price = Column(Numeric(18, 4), nullable=False)
+    discount_amount = Column(Numeric(18, 2), nullable=False, default=0.0)
+    taxable_amount = Column(Numeric(18, 2), nullable=False)
+    gst_rate = Column(Numeric(5, 2), nullable=False)
+    gst_amount = Column(Numeric(18, 2), nullable=False)
+    tds_rate = Column(Numeric(5, 2), nullable=False, default=0.0)
+    tds_amount = Column(Numeric(18, 2), nullable=False, default=0.0)
+    tcs_rate = Column(Numeric(5, 2), nullable=False, default=0.0)
+    tcs_amount = Column(Numeric(18, 2), nullable=False, default=0.0)
+    total_amount = Column(Numeric(18, 2), nullable=False)
+    is_deleted = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    sales_order = relationship("SalesOrder", back_populates="items")
+    inventory_item = relationship("InventoryItem")
+
+
+class SalesOrderActivityLog(Base):
+    __tablename__ = "sales_order_activity_logs"
+
+    activity_log_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    sales_order_id = Column(UUID(as_uuid=True), ForeignKey("sales_orders.sales_order_id", ondelete="CASCADE"), nullable=False)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.company_id"), nullable=False)
+    actor_user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
+    action = Column(String, nullable=False)
+    previous_value = Column(JSON)
+    new_value = Column(JSON)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    actor = relationship("User")
+
+
+class SalesOrderAttachment(Base):
+    __tablename__ = "sales_order_attachments"
+
+    attachment_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    sales_order_id = Column(UUID(as_uuid=True), ForeignKey("sales_orders.sales_order_id", ondelete="CASCADE"), nullable=False)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.company_id"), nullable=False)
+    file_name = Column(String, nullable=False)
+    file_path = Column(String, nullable=False)
+    file_size = Column(Integer, nullable=False)
+    mime_type = Column(String)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+

@@ -11,8 +11,9 @@ Design notes:
   will reference `inventory_item_id` to pull default prices/accounts/tax.
 """
 
+import os
 from datetime import datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, update
@@ -29,7 +30,8 @@ ALLOWED_ITEM_TYPES = {"goods", "service"}
 
 
 def _to_response(row: InventoryItem) -> ItemResponse:
-    return ItemResponse(**row.__dict__)
+    data = {col.name: getattr(row, col.name) for col in row.__table__.columns}
+    return ItemResponse(**data)
 
 
 @router.post("", response_model=ItemResponse, status_code=status.HTTP_201_CREATED)
@@ -77,11 +79,69 @@ def list_items(
     current_context: TenantContext = Depends(get_current_context),
     db: Session = Depends(get_db_session),
     page: int = Query(1, ge=1),
-    limit: int = Query(25, ge=1, le=200),
+    limit: int = Query(25, ge=1, le=1000),
     q: str | None = Query(None),
     is_active: bool | None = Query(None),
     item_type: str | None = Query(None),
 ):
+    if os.getenv('FINOPS_USE_DATABASE', 'true').lower() == 'false':
+        from decimal import Decimal
+        mock_items = [
+            ItemResponse(
+                inventory_item_id=UUID("d3b07384-d113-49c5-a50e-56e6d183d297"),
+                item_name="Premium Consulting Service",
+                item_type="service",
+                unit="hours",
+                sku="SRV-CONS-001",
+                description="Financial consulting and advisory services",
+                is_active=True,
+                is_track_inventory=False,
+                gst_rate=Decimal("18.00"),
+                selling_price=Decimal("5000.00"),
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            ),
+            ItemResponse(
+                inventory_item_id=UUID("e9834162-8ccb-4d43-85b5-4bfe2d7116fc"),
+                item_name="OptiReach ERP License",
+                item_type="service",
+                unit="user/month",
+                sku="LIC-ERP-001",
+                description="Monthly subscription for OptiReach Financial ERP",
+                is_active=True,
+                is_track_inventory=False,
+                gst_rate=Decimal("18.00"),
+                selling_price=Decimal("1200.00"),
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            ),
+            ItemResponse(
+                inventory_item_id=UUID("a402d2bf-cc47-4f6c-8ab5-3efefee7b69c"),
+                item_name="Office Chair Elite",
+                item_type="goods",
+                unit="pcs",
+                sku="GDS-CHR-999",
+                description="Ergonomic leather office chair",
+                is_active=True,
+                is_track_inventory=True,
+                opening_stock=Decimal("100.00"),
+                opening_value=Decimal("80000.00"),
+                reorder_point=Decimal("10.00"),
+                gst_rate=Decimal("18.00"),
+                selling_price=Decimal("12000.00"),
+                purchase_price=Decimal("8000.00"),
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+        ]
+        if item_type:
+            mock_items = [it for it in mock_items if it.item_type == item_type]
+        if is_active is not None:
+            mock_items = [it for it in mock_items if it.is_active == is_active]
+        if q:
+            mock_items = [it for it in mock_items if q.lower() in it.item_name.lower() or (it.sku and q.lower() in it.sku.lower())]
+        return mock_items
+
     stmt = select(InventoryItem).where(InventoryItem.company_id == current_context.company_id)
     if q:
         stmt = stmt.where(InventoryItem.item_name.ilike(f"%{q}%") | InventoryItem.sku.ilike(f"%{q}%"))
@@ -100,6 +160,71 @@ def get_item(
     current_context: TenantContext = Depends(get_current_context),
     db: Session = Depends(get_db_session),
 ):
+    if os.getenv('FINOPS_USE_DATABASE', 'true').lower() == 'false':
+        from decimal import Decimal
+        for it in [
+            ItemResponse(
+                inventory_item_id=UUID("d3b07384-d113-49c5-a50e-56e6d183d297"),
+                item_name="Premium Consulting Service",
+                item_type="service",
+                unit="hours",
+                sku="SRV-CONS-001",
+                description="Financial consulting and advisory services",
+                is_active=True,
+                is_track_inventory=False,
+                gst_rate=Decimal("18.00"),
+                selling_price=Decimal("5000.00"),
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            ),
+            ItemResponse(
+                inventory_item_id=UUID("e9834162-8ccb-4d43-85b5-4bfe2d7116fc"),
+                item_name="OptiReach ERP License",
+                item_type="service",
+                unit="user/month",
+                sku="LIC-ERP-001",
+                description="Monthly subscription for OptiReach Financial ERP",
+                is_active=True,
+                is_track_inventory=False,
+                gst_rate=Decimal("18.00"),
+                selling_price=Decimal("1200.00"),
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            ),
+            ItemResponse(
+                inventory_item_id=UUID("a402d2bf-cc47-4f6c-8ab5-3efefee7b69c"),
+                item_name="Office Chair Elite",
+                item_type="goods",
+                unit="pcs",
+                sku="GDS-CHR-999",
+                description="Ergonomic leather office chair",
+                is_active=True,
+                is_track_inventory=True,
+                opening_stock=Decimal("100.00"),
+                opening_value=Decimal("80000.00"),
+                reorder_point=Decimal("10.00"),
+                gst_rate=Decimal("18.00"),
+                selling_price=Decimal("12000.00"),
+                purchase_price=Decimal("8000.00"),
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+        ]:
+            if it.inventory_item_id == item_id:
+                return it
+        return ItemResponse(
+            inventory_item_id=item_id,
+            item_name="Mock Item",
+            item_type="goods",
+            unit="pcs",
+            is_active=True,
+            is_track_inventory=False,
+            gst_rate=Decimal("18.00"),
+            selling_price=Decimal("100.00"),
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+
     row = db.scalar(
         select(InventoryItem)
         .where(InventoryItem.company_id == current_context.company_id)
@@ -154,4 +279,3 @@ def deactivate_item(
     row.updated_at = datetime.utcnow()
     db.commit()
     return {"success": True}
-

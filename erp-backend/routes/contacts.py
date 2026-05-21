@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import csv
 import io
+import os
 from datetime import datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy import select, update
@@ -72,10 +73,62 @@ def list_contacts(
     current_context: TenantContext = Depends(get_current_context),
     db: Session = Depends(get_db_session),
     page: int = Query(1, ge=1),
-    limit: int = Query(25, ge=1, le=200),
+    limit: int = Query(25, ge=1, le=1000),
     q: str | None = Query(None),
     contact_type: str | None = Query(None),
 ):
+    if os.getenv('FINOPS_USE_DATABASE', 'true').lower() == 'false':
+        mock_contacts = [
+            ContactResponse(
+                contact_id=UUID("ce3ba27e-128a-45bd-b65d-9c7f1db8816c"),
+                contact_type="customer",
+                name="Milin Kanu",
+                email="milin@optireach.com",
+                phone="+919876543210",
+                gstin="27AAAAA1111A1Z1",
+                pan="AAAAA1111A",
+                payment_terms="Net 30",
+                currency="INR",
+                billing_address={"street": "123 Main St", "city": "Mumbai", "state": "Maharashtra", "zip": "400001"},
+                shipping_address={"street": "123 Main St", "city": "Mumbai", "state": "Maharashtra", "zip": "400001"},
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            ),
+            ContactResponse(
+                contact_id=UUID("555ff0c8-141f-44f3-8964-bfee5bd8f4bf"),
+                contact_type="customer",
+                name="OptiReach Customer",
+                email="customer@optireach.com",
+                phone="+919876543211",
+                gstin="27BBBBB2222B2Z2",
+                pan="BBBBB2222B",
+                payment_terms="Due on Receipt",
+                currency="INR",
+                billing_address={"street": "456 Corporate Blvd", "city": "Pune", "state": "Maharashtra", "zip": "411001"},
+                shipping_address={"street": "456 Corporate Blvd", "city": "Pune", "state": "Maharashtra", "zip": "411001"},
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            ),
+            ContactResponse(
+                contact_id=UUID("9a2e6f1a-b31c-421b-8cd7-1f4f5a3b2c6d"),
+                contact_type="vendor",
+                name="Wayne Enterprises",
+                email="billing@wayne.com",
+                phone="+15550199",
+                gstin=None,
+                pan=None,
+                payment_terms="Net 15",
+                currency="USD",
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+        ]
+        if contact_type:
+            mock_contacts = [c for c in mock_contacts if c.contact_type == contact_type]
+        if q:
+            mock_contacts = [c for c in mock_contacts if q.lower() in c.name.lower()]
+        return mock_contacts
+
     stmt = select(Party).where(Party.company_id == current_context.company_id)
     if q:
         stmt = stmt.where(Party.party_name.ilike(f"%{q}%"))
@@ -109,6 +162,64 @@ def get_contact(
     current_context: TenantContext = Depends(get_current_context),
     db: Session = Depends(get_db_session),
 ):
+    if os.getenv('FINOPS_USE_DATABASE', 'true').lower() == 'false':
+        for c in [
+            ContactResponse(
+                contact_id=UUID("ce3ba27e-128a-45bd-b65d-9c7f1db8816c"),
+                contact_type="customer",
+                name="Milin Kanu",
+                email="milin@optireach.com",
+                phone="+919876543210",
+                gstin="27AAAAA1111A1Z1",
+                pan="AAAAA1111A",
+                payment_terms="Net 30",
+                currency="INR",
+                billing_address={"street": "123 Main St", "city": "Mumbai", "state": "Maharashtra", "zip": "400001"},
+                shipping_address={"street": "123 Main St", "city": "Mumbai", "state": "Maharashtra", "zip": "400001"},
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            ),
+            ContactResponse(
+                contact_id=UUID("555ff0c8-141f-44f3-8964-bfee5bd8f4bf"),
+                contact_type="customer",
+                name="OptiReach Customer",
+                email="customer@optireach.com",
+                phone="+919876543211",
+                gstin="27BBBBB2222B2Z2",
+                pan="BBBBB2222B",
+                payment_terms="Due on Receipt",
+                currency="INR",
+                billing_address={"street": "456 Corporate Blvd", "city": "Pune", "state": "Maharashtra", "zip": "411001"},
+                shipping_address={"street": "456 Corporate Blvd", "city": "Pune", "state": "Maharashtra", "zip": "411001"},
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            ),
+            ContactResponse(
+                contact_id=UUID("9a2e6f1a-b31c-421b-8cd7-1f4f5a3b2c6d"),
+                contact_type="vendor",
+                name="Wayne Enterprises",
+                email="billing@wayne.com",
+                phone="+15550199",
+                gstin=None,
+                pan=None,
+                payment_terms="Net 15",
+                currency="USD",
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+        ]:
+            if c.contact_id == contact_id:
+                return c
+        return ContactResponse(
+            contact_id=contact_id,
+            contact_type="customer",
+            name="Mock Contact",
+            email="mock@example.com",
+            currency="INR",
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+
     row = db.scalar(
         select(Party)
         .where(Party.company_id == current_context.company_id)

@@ -13,6 +13,12 @@ import ContactsView from '../views/contacts/ContactsView.vue'
 import InvoicesListView from '../views/sales/InvoicesListView.vue'
 import InvoiceCreateView from '../views/sales/InvoiceCreateView.vue'
 import InvoiceDetailView from '../views/sales/InvoiceDetailView.vue'
+import QuotesListView from '../views/sales/QuotesListView.vue'
+import QuoteCreateView from '../views/sales/QuoteCreateView.vue'
+import QuoteDetailView from '../views/sales/QuoteDetailView.vue'
+import SalesOrdersListView from '../views/sales/SalesOrdersListView.vue'
+import SalesOrderCreateView from '../views/sales/SalesOrderCreateView.vue'
+import SalesOrderDetailView from '../views/sales/SalesOrderDetailView.vue'
 import ItemsView from '../views/items/ItemsView.vue'
 
 const routes = [
@@ -38,6 +44,14 @@ const routes = [
       { path: 'sales/invoices', name: 'Invoices', component: InvoicesListView },
       { path: 'sales/invoices/new', name: 'InvoiceNew', component: InvoiceCreateView },
       { path: 'sales/invoices/:invoiceId', name: 'InvoiceDetail', component: InvoiceDetailView },
+      { path: 'sales/quotes', name: 'Quotes', component: QuotesListView },
+      { path: 'sales/quotes/new', name: 'QuoteNew', component: QuoteCreateView },
+      { path: 'sales/quotes/:quoteId', name: 'QuoteDetail', component: QuoteDetailView },
+      { path: 'sales/quotes/:quoteId/edit', name: 'QuoteEdit', component: QuoteCreateView },
+      { path: 'sales/orders', name: 'SalesOrders', component: SalesOrdersListView },
+      { path: 'sales/orders/new', name: 'SalesOrderNew', component: SalesOrderCreateView },
+      { path: 'sales/orders/:salesOrderId', name: 'SalesOrderDetail', component: SalesOrderDetailView },
+      { path: 'sales/orders/:salesOrderId/edit', name: 'SalesOrderEdit', component: SalesOrderCreateView },
       { path: 'items', name: 'Items', component: ItemsView },
     ],
   },

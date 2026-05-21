@@ -14,7 +14,8 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def tenant_middleware(request: Request, call_next):
-        if request.url.path.startswith("/health"):
+        unauthenticated_prefixes = ("/health", "/auth", "/docs", "/openapi.json", "/redoc")
+        if request.url.path.startswith(unauthenticated_prefixes):
             return await call_next(request)
 
         try:
