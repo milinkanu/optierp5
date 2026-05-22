@@ -29,6 +29,9 @@ def main():
         print("Please set DATABASE_URL or create a .env file in the backend root directory.", file=sys.stderr)
         sys.exit(1)
 
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+
     print("Connecting to database...")
     try:
         conn = psycopg2.connect(database_url)
