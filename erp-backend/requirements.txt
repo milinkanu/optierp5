@@ -1,0 +1,15 @@
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-dotenv>=1.0
+
+# Database (PostgreSQL)
+SQLAlchemy>=2.0
+psycopg2-binary>=2.9
+
+# Auth / security
+python-jose[cryptography]>=3.3
+passlib[bcrypt]>=1.7
+
+# Utilities commonly used across the codebase
+pydantic>=2.6
+requests>=2.31
