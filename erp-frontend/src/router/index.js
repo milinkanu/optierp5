@@ -10,6 +10,7 @@ import VerifyEmailView from '../views/auth/VerifyEmailView.vue'
 import DashboardView from '../views/dashboard/DashboardView.vue'
 import ChartOfAccountsView from '../views/accountant/ChartOfAccountsView.vue'
 import ContactsView from '../views/contacts/ContactsView.vue'
+import CustomersListView from '../views/contacts/CustomersListView.vue'
 import InvoicesListView from '../views/sales/InvoicesListView.vue'
 import InvoiceCreateView from '../views/sales/InvoiceCreateView.vue'
 import InvoiceDetailView from '../views/sales/InvoiceDetailView.vue'
@@ -26,6 +27,9 @@ import DeliveryChallansView from '../views/sales/DeliveryChallansView.vue'
 import DeliveryChallanCreateView from '../views/sales/DeliveryChallanCreateView.vue'
 import PaymentsReceivedView from '../views/sales/PaymentsReceivedView.vue'
 import PaymentReceivedDetailView from '../views/sales/PaymentReceivedDetailView.vue'
+import CreditNotesListView from '../views/sales/CreditNotesListView.vue'
+import CreditNoteCreateView from '../views/sales/CreditNoteCreateView.vue'
+import CreditNoteDetailView from '../views/sales/CreditNoteDetailView.vue'
 
 
 const routes = [
@@ -48,6 +52,7 @@ const routes = [
       { path: '', name: 'Dashboard', component: DashboardView },
       { path: 'accountant/chart-of-accounts', name: 'ChartOfAccounts', component: ChartOfAccountsView },
       { path: 'contacts', name: 'Contacts', component: ContactsView },
+      { path: 'customers', name: 'Customers', component: CustomersListView },
       { path: 'sales/invoices', name: 'Invoices', component: InvoicesListView },
       { path: 'sales/invoices/new', name: 'InvoiceNew', component: InvoiceCreateView },
       { path: 'sales/invoices/:invoiceId', name: 'InvoiceDetail', component: InvoiceDetailView },
@@ -66,6 +71,10 @@ const routes = [
       { path: 'sales/delivery-challans/new', name: 'DeliveryChallanNew', component: DeliveryChallanCreateView },
       { path: 'sales/payments-received', name: 'PaymentsReceived', component: PaymentsReceivedView },
       { path: 'sales/payments-received/:paymentId', name: 'PaymentReceivedDetail', component: PaymentReceivedDetailView },
+      { path: 'sales/credit-notes', name: 'CreditNotes', component: CreditNotesListView },
+      { path: 'sales/credit-notes/new', name: 'CreditNoteNew', component: CreditNoteCreateView },
+      { path: 'sales/credit-notes/:creditNoteId', name: 'CreditNoteDetail', component: CreditNoteDetailView },
+      { path: 'sales/credit-notes/:creditNoteId/edit', name: 'CreditNoteEdit', component: CreditNoteCreateView },
     ],
   },
   {
