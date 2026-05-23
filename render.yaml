@@ -1,3 +1,9 @@
+databases:
+  - name: finops-db
+    plan: free
+    databaseName: finops
+    user: finops
+
 services:
   - type: web
     name: erp-backend
@@ -13,8 +19,16 @@ services:
         value: "true"
       - key: DEV_ALLOW_ALL_ORIGINS
         value: "false"
-      # Set these in Render Dashboard (don’t commit secrets):
-      # - DATABASE_URL
-      # - JWT_SECRET
-      # - JWT_ALGORITHM
-      # - JWT_EXPIRATION_MINUTES
+      - key: DATABASE_URL
+        fromDatabase:
+          name: finops-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_ALGORITHM
+        value: "HS256"
+      - key: JWT_EXPIRATION_MINUTES
+        value: "60"
+      - key: ALLOWED_ORIGINS
+        value: "https://your-vercel-domain.vercel.app"
+        sync: false

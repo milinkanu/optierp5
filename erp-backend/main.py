@@ -41,21 +41,56 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def get_cors_headers(request) -> dict[str, str]:
+    origin = request.headers.get("origin")
+    if not origin:
+        return {}
+    
+    headers = {}
+    is_allowed = False
+    
+    if dev_allow_all:
+        is_allowed = True
+    else:
+        if origin in allowed_origins:
+            is_allowed = True
+        elif allow_origin_regex:
+            import re
+            try:
+                if re.match(allow_origin_regex, origin):
+                    is_allowed = True
+            except Exception:
+                pass
+                
+    if is_allowed:
+        headers["Access-Control-Allow-Origin"] = origin
+        if not dev_allow_all:
+            headers["Access-Control-Allow-Credentials"] = "true"
+        headers["Access-Control-Allow-Methods"] = "*"
+        headers["Access-Control-Allow-Headers"] = "*"
+        headers["Access-Control-Expose-Headers"] = "*"
+        
+    return headers
+
 from fastapi.exceptions import HTTPException as FastAPIHTTPException, RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request, exc: Exception):
+    cors_headers = get_cors_headers(request)
     if isinstance(exc, (FastAPIHTTPException, StarletteHTTPException)):
+        resp_headers = dict(getattr(exc, "headers", None) or {})
+        resp_headers.update(cors_headers)
         return JSONResponse(
             status_code=exc.status_code,
             content={"detail": exc.detail},
-            headers=getattr(exc, "headers", None),
+            headers=resp_headers,
         )
     if isinstance(exc, RequestValidationError):
         return JSONResponse(
             status_code=422,
             content={"detail": exc.errors(), "body": exc.body},
+            headers=cors_headers,
         )
     # Ensure we return JSON (and still pass through CORS middleware) during dev.
     return JSONResponse(
@@ -66,6 +101,7 @@ async def unhandled_exception_handler(request, exc: Exception):
             "message": str(exc),
             "traceback": traceback.format_exc().splitlines(),
         },
+        headers=cors_headers,
     )
 
 app.include_router(health.router)
