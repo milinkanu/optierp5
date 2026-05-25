@@ -7,7 +7,7 @@ from typing import List, Optional
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, update, and_, desc
+from sqlalchemy import select, update, and_, desc, text
 from sqlalchemy.orm import Session
 
 from models.db_models import (
@@ -397,119 +397,96 @@ def convert_to_invoice(db: Session, company_id: UUID, user_id: UUID, quote_id: U
 
     # Build raw transaction and invoice using SQL to match routes/invoices.py logic
     # and link quote_id.
-    from utils.db_invoice import engine
     now = datetime.utcnow()
     transaction_id = uuid4()
     invoice_id = uuid4()
 
-    with engine.begin() as conn:
-        # Get next invoice number
-        invoice_number = conn.execute(
-            select(db.scalar(select(Quote).limit(1)).__table__.schema).select_from(
-                select(db.scalar(select(Quote).limit(1)).__table__)
+    # Get next invoice number using active db session
+    invoice_number = db.execute(
+        text("SELECT app.next_invoice_number(:company_id, :invoice_type)"),
+        {"company_id": str(company_id), "invoice_type": "sales_invoice"}
+    ).scalar_one()
+
+    db.execute(
+        text(
+            "INSERT INTO transactions (transaction_id, company_id, txn_type, txn_number, txn_date, fiscal_year, period, party_id, subtotal, gst_breakdown, grand_total, status, created_by, updated_by, created_at, updated_at) "
+            "VALUES (:transaction_id, :company_id, 'sales_invoice', :txn_number, :txn_date, :fiscal_year, :period, :cust_id, :subtotal, :gst_breakdown, :grand_total, 'posted', :created_by, :updated_by, :created_at, :updated_at)"
+        ),
+        {
+            "transaction_id": str(transaction_id),
+            "company_id": str(company_id),
+            "txn_number": invoice_number,
+            "txn_date": date.today(),
+            "fiscal_year": date.today().strftime("%Y"),
+            "period": date.today().strftime("%Y-%m"),
+            "cust_id": str(quote.billing_party_id),
+            "subtotal": float(quote.subtotal),
+            "gst_breakdown": json.dumps({"gst_total": float(quote.total_gst), "tds_total": float(quote.total_tds), "tcs_total": float(quote.total_tcs)}),
+            "grand_total": float(quote.grand_total),
+            "created_by": str(user_id),
+            "updated_by": str(user_id),
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
+
+    db.execute(
+        text(
+            "INSERT INTO invoices (invoice_id, company_id, transaction_id, invoice_number, invoice_type, invoice_date, due_date, billing_party_id, shipping_party_id, order_number, salesperson_id, subject, customer_notes, terms_and_conditions, currency, exchange_rate, invoice_subtotal, invoice_total_gst, invoice_total_tds, invoice_total_tcs, invoice_grand_total, status, created_by, updated_by, created_at, updated_at, quote_id) "
+            "VALUES (:invoice_id, :company_id, :transaction_id, :invoice_number, :invoice_type, :invoice_date, :due_date, :billing_party_id, :shipping_party_id, :order_number, :salesperson_id, :subject, :customer_notes, :terms_and_conditions, :currency, :exchange_rate, :invoice_subtotal, :invoice_total_gst, :invoice_total_tds, :invoice_total_tcs, :invoice_grand_total, :status, :created_by, :updated_by, :created_at, :updated_at, :quote_id)"
+        ),
+        {
+            "invoice_id": str(invoice_id),
+            "company_id": str(company_id),
+            "transaction_id": str(transaction_id),
+            "invoice_number": invoice_number,
+            "invoice_type": "sales_invoice",
+            "invoice_date": date.today(),
+            "due_date": quote.expiry_date,
+            "billing_party_id": str(quote.billing_party_id),
+            "shipping_party_id": str(quote.shipping_party_id) if quote.shipping_party_id else None,
+            "order_number": quote.quote_number,
+            "salesperson_id": str(quote.salesperson_id) if quote.salesperson_id else None,
+            "subject": quote.subject,
+            "customer_notes": quote.customer_notes,
+            "terms_and_conditions": quote.terms_and_conditions,
+            "currency": quote.currency,
+            "exchange_rate": float(quote.exchange_rate),
+            "invoice_subtotal": float(quote.subtotal),
+            "invoice_total_gst": float(quote.total_gst),
+            "invoice_total_tds": float(quote.total_tds),
+            "invoice_total_tcs": float(quote.total_tcs),
+            "invoice_grand_total": float(quote.grand_total),
+            "status": "draft",
+            "created_by": str(user_id),
+            "updated_by": str(user_id),
+            "created_at": now,
+            "updated_at": now,
+            "quote_id": str(quote_id),
+        }
+    )
+
+    for item in quote.items:
+        # Query item sales_account if inventory_item exists
+        item_sales_acc_id = None
+        if item.inventory_item_id:
+            inv_item = db.scalar(
+                select(InventoryItem)
+                .where(and_(InventoryItem.inventory_item_id == item.inventory_item_id, InventoryItem.company_id == company_id))
             )
-        ) # wait, let's call the next_invoice_number function:
-        invoice_number = conn.execute(
-            select(db.scalar(select(Quote).limit(1)).__table__.schema) # Actually let's use plain text
-        )
-        # Plain SQL call: SELECT app.next_invoice_number(:company_id, :invoice_type)
-        invoice_number = conn.execute(
-            select(db.scalar(select(Quote).limit(1)).__table__.schema)
-        ) # let's just write simple SQL call
-        
-    # Wait, we can invoke the DB function directly! Let's do it using raw SQL:
-    with engine.begin() as conn:
-        invoice_number = conn.execute(
-            db.text("SELECT app.next_invoice_number(:company_id, :invoice_type)"),
-            {"company_id": str(company_id), "invoice_type": "sales_invoice"}
-        ).scalar_one()
+            if inv_item:
+                item_sales_acc_id = inv_item.sales_account_id
 
-        conn.execute(
-            db.text(
-                "INSERT INTO transactions (transaction_id, company_id, txn_type, txn_number, txn_date, fiscal_year, period, subtotal, gst_breakdown, grand_total, status, currency, exchange_rate, created_by, updated_by, created_at, updated_at) "
-                "VALUES (:transaction_id, :company_id, :txn_type, :txn_number, :txn_date, :fiscal_year, :period, :subtotal, :gst_breakdown, :grand_total, :status, :currency, :exchange_rate, :created_by, :updated_by, :created_at, :updated_at)"
-            ),
-            {
-                "transaction_id": str(transaction_id),
-                "company_id": str(company_id),
-                "txn_type": "sales_invoice",
-                "txn_number": invoice_number,
-                "txn_date": date.today(),
-                "fiscal_year": date.today().strftime("%Y-%m"),
-                "period": date.today().strftime("%Y-%m"),
-                "subtotal": float(quote.subtotal),
-                "gst_breakdown": json.dumps({"gst_total": float(quote.total_gst), "tds_total": float(quote.total_tds), "tcs_total": float(quote.total_tcs)}),
-                "grand_total": float(quote.grand_total),
-                "status": "draft",
-                "currency": quote.currency,
-                "exchange_rate": float(quote.exchange_rate),
-                "created_by": str(user_id),
-                "updated_by": str(user_id),
-                "created_at": now,
-                "updated_at": now,
-            }
-        )
+        final_acc_id = item_sales_acc_id or account.account_id
 
-        conn.execute(
-            db.text(
-                "INSERT INTO invoices (invoice_id, company_id, transaction_id, invoice_number, invoice_type, invoice_date, due_date, billing_party_id, shipping_party_id, order_number, salesperson_id, subject, customer_notes, terms_and_conditions, currency, exchange_rate, invoice_subtotal, invoice_total_gst, invoice_total_tds, invoice_total_tcs, invoice_grand_total, status, created_by, updated_by, created_at, updated_at, quote_id) "
-                "VALUES (:invoice_id, :company_id, :transaction_id, :invoice_number, :invoice_type, :invoice_date, :due_date, :billing_party_id, :shipping_party_id, :order_number, :salesperson_id, :subject, :customer_notes, :terms_and_conditions, :currency, :exchange_rate, :invoice_subtotal, :invoice_total_gst, :invoice_total_tds, :invoice_total_tcs, :invoice_grand_total, :status, :created_by, :updated_by, :created_at, :updated_at, :quote_id)"
+        db.execute(
+            text(
+                "INSERT INTO invoice_items (invoice_item_id, invoice_id, company_id, line_number, description, hsn_sac, account_id, quantity, unit_price, discount_amount, taxable_amount, gst_rate, gst_amount, tds_rate, tds_amount, tcs_rate, tcs_amount, total_amount, created_at, updated_at) "
+                "VALUES (gen_random_uuid(), :invoice_id, :company_id, :line_number, :description, :hsn_sac, :account_id, :quantity, :unit_price, :discount_amount, :taxable_amount, :gst_rate, :gst_amount, :tds_rate, :tds_amount, :tcs_rate, :tcs_amount, :total_amount, :created_at, :updated_at)"
             ),
             {
                 "invoice_id": str(invoice_id),
                 "company_id": str(company_id),
-                "transaction_id": str(transaction_id),
-                "invoice_number": invoice_number,
-                "invoice_type": "sales_invoice",
-                "invoice_date": date.today(),
-                "due_date": quote.expiry_date,
-                "billing_party_id": str(quote.billing_party_id),
-                "shipping_party_id": str(quote.shipping_party_id) if quote.shipping_party_id else None,
-                "order_number": quote.quote_number,
-                "salesperson_id": str(quote.salesperson_id) if quote.salesperson_id else None,
-                "subject": quote.subject,
-                "customer_notes": quote.customer_notes,
-                "terms_and_conditions": quote.terms_and_conditions,
-                "currency": quote.currency,
-                "exchange_rate": float(quote.exchange_rate),
-                "invoice_subtotal": float(quote.subtotal),
-                "invoice_total_gst": float(quote.total_gst),
-                "invoice_total_tds": float(quote.total_tds),
-                "invoice_total_tcs": float(quote.total_tcs),
-                "invoice_grand_total": float(quote.grand_total),
-                "status": "draft",
-                "created_by": str(user_id),
-                "updated_by": str(user_id),
-                "created_at": now,
-                "updated_at": now,
-                "quote_id": str(quote_id),
-            }
-        )
-
-        for item in quote.items:
-            # Query item sales_account if inventory_item exists
-            item_sales_acc_id = None
-            if item.inventory_item_id:
-                inv_item = db.scalar(
-                    select(InventoryItem)
-                    .where(and_(InventoryItem.inventory_item_id == item.inventory_item_id, InventoryItem.company_id == company_id))
-                )
-                if inv_item:
-                    item_sales_acc_id = inv_item.sales_account_id
-
-            final_acc_id = item_sales_acc_id or account.account_id
-
-            conn.execute(
-                db.text(
-                    "INSERT INTO invoice_items (invoice_item_id, invoice_id, company_id, line_number, description, hsn_sac, account_id, quantity, unit_price, discount_amount, taxable_amount, gst_rate, gst_amount, tds_rate, tds_amount, tcs_rate, tcs_amount, total_amount, created_at, updated_at) "
-                    "VALUES (gen_random_uuid(), :invoice_id, :company_id, :line_number, :description, :hsn_sac, :account_id, :quantity, :unit_price, :discount_amount, :taxable_amount, :gst_rate, :gst_amount, :tds_rate, :tds_amount, :tcs_rate, :tcs_amount, :total_amount, :created_at, :updated_at)"
-                ),
-                {
-                    "invoice_id": str(invoice_id),
-                    "company_id": str(company_id),
-                    "line_number": item.line_number,
-                    "description": item.description,
-                    "hsn_sac": "0000",
                     "account_id": str(final_acc_id),
                     "quantity": float(item.quantity),
                     "unit_price": float(item.unit_price),

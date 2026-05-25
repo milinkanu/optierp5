@@ -49,7 +49,10 @@ async def scheduler_loop():
                 for r in due_rows:
                     try:
                         logger.info(f"Generating recurring invoice for profile {r['profile_name']} (DATABASE MODE)")
-                        trigger_invoice_generation(UUID(r['profile_id']), UUID(r['company_id']), UUID(r['created_by']), current_date)
+                        profile_id = r["profile_id"] if isinstance(r["profile_id"], UUID) else UUID(str(r["profile_id"]))
+                        company_id = r["company_id"] if isinstance(r["company_id"], UUID) else UUID(str(r["company_id"]))
+                        created_by = r["created_by"] if isinstance(r["created_by"], UUID) else UUID(str(r["created_by"]))
+                        trigger_invoice_generation(profile_id, company_id, created_by, current_date)
                     except Exception as ex:
                         logger.error(f"Failed to generate recurring invoice for profile {r['profile_id']}: {str(ex)}")
                         

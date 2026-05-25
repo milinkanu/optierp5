@@ -3,13 +3,13 @@ from __future__ import annotations
 from datetime import date
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, UUID4
+from pydantic import BaseModel, EmailStr
 
 
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
-    company_id: UUID4 | None = None
+    company_id: UUID | None = None
 
 
 class RefreshTokenRequest(BaseModel):
@@ -18,7 +18,7 @@ class RefreshTokenRequest(BaseModel):
 
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
-    company_id: UUID4 | None = None
+    company_id: UUID | None = None
 
 
 class ResetPasswordRequest(BaseModel):
@@ -66,8 +66,8 @@ class SignUpRequest(BaseModel):
 
 
 class UserResponse(BaseModel):
-    user_id: UUID4
-    company_id: UUID4
+    user_id: UUID
+    company_id: UUID
     email: EmailStr
     name: str
     roles: list[str]

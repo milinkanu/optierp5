@@ -43,8 +43,7 @@
             <i class="chevron" :class="{ expanded: expandedGroups.sales }" v-if="!isCollapsed">▼</i>
           </div>
           <div class="nav-sub-items" v-show="expandedGroups.sales && !isCollapsed">
-            <router-link to="/customers" class="nav-sub-item" active-class="active">Customers</router-link>
-            <router-link to="/contacts" class="nav-sub-item" active-class="active">Contacts / Vendors</router-link>
+            <router-link to="/contacts" class="nav-sub-item" active-class="active">Customers</router-link>
             <router-link to="/sales/quotes" class="nav-sub-item" active-class="active">Quotes</router-link>
             <router-link to="/sales/orders" class="nav-sub-item" active-class="active">Sales Orders</router-link>
             <router-link to="/sales/invoices" class="nav-sub-item" active-class="active">Invoices</router-link>

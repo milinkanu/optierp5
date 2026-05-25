@@ -35,6 +35,7 @@
         <Card class="card">
           <h3 class="section-title">Payment Information</h3>
           <table class="detail-table">
+            <tbody>
             <tr>
               <th>Payment Number</th>
               <td class="mono font-bold">{{ payment.payment_number }}</td>
@@ -63,12 +64,14 @@
               <th>Notes / Remarks</th>
               <td class="notes-cell">{{ payment.notes || '—' }}</td>
             </tr>
+            </tbody>
           </table>
         </Card>
 
         <Card class="card">
           <h3 class="section-title">Customer Information</h3>
           <table class="detail-table">
+            <tbody>
             <tr>
               <th>Customer Name</th>
               <td class="font-bold text-lg text-primary">{{ customer ? customer.name : 'Unknown Customer' }}</td>
@@ -89,6 +92,7 @@
               <th>Billing Address</th>
               <td class="notes-cell">{{ customer ? customer.billing_address : '—' }}</td>
             </tr>
+            </tbody>
           </table>
         </Card>
       </div>

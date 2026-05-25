@@ -502,7 +502,7 @@
 
 <script setup>
 import { reactive, ref, watch, onMounted, computed } from 'vue'
-import { useCustomersStore } from '../../stores/customers'
+import { useContactsStore } from '../../stores/contacts'
 import { useToastStore } from '../../stores/toast'
 import Button from '../../components/ui/Button.vue'
 
@@ -513,7 +513,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'saved'])
 
-const store = useCustomersStore()
+const store = useContactsStore()
 const toast = useToastStore()
 
 const currentStep = ref(0)
@@ -1064,7 +1064,7 @@ async function save() {
     }
 
     if (props.editing) {
-      await store.update(props.editing.customer_id, payload)
+      await store.update(props.editing.contact_id, payload)
       toast.success('Customer updated successfully')
     } else {
       await store.create(payload)

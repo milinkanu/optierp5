@@ -1,54 +1,126 @@
 <template>
   <div class="page">
-    <PageHeader title="Contacts" subtitle="Customers, vendors, and both — with CSV import.">
+    <!-- Header -->
+    <PageHeader title="Contacts / Vendors" subtitle="Onboard compliance-ready customer contacts, track double-entry opening balances, and run CSV mapping imports.">
       <template #actions>
-        <label class="file-btn">
-          <input type="file" accept=".csv,text/csv" class="hidden" @change="onPickCsv" />
-          <Button variant="secondary" :loading="importing">Import CSV</Button>
-        </label>
-        <Button @click="openCreate">New Contact</Button>
+        <Button variant="secondary" @click="wizardOpen = true">
+          <span class="btn-icon">📊</span> Import CSV Wizard
+        </Button>
+        <Button @click="openCreate">
+          <span class="btn-icon">+</span> New Customer Contact
+        </Button>
       </template>
     </PageHeader>
 
-    <Card class="card">
+    <!-- Main List Container Card -->
+    <Card class="list-card">
+      <!-- Search & Filters Toolbar -->
       <div class="toolbar">
-        <input v-model="q" class="input" placeholder="Search by name" @keyup.enter="refresh" />
-        <select v-model="typeFilter" class="input" @change="refresh">
-          <option value="">All</option>
-          <option value="customer">Customer</option>
-          <option value="vendor">Vendor</option>
-          <option value="both">Both</option>
-        </select>
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input
+            v-model="searchQuery"
+            class="input search-input"
+            placeholder="Search by name, customer code, email, or GSTIN..."
+            @keyup.enter="refresh"
+          />
+        </div>
+        
+        <div class="filter-group">
+          <select v-model="statusFilter" class="input filter-select" @change="refresh">
+            <option value="">All Statuses</option>
+            <option value="active">Active Only</option>
+            <option value="inactive">Inactive Only</option>
+          </select>
+        </div>
+
         <Button variant="secondary" @click="refresh">Search</Button>
+        <Button variant="secondary" @click="clearFilters" class="clear-btn">Clear</Button>
       </div>
 
+      <!-- Main Contacts Table -->
       <div class="table-wrap">
         <table class="table">
           <thead>
             <tr>
-              <th>Name</th>
-              <th style="width: 120px;">Type</th>
-              <th>Email</th>
-              <th style="width: 140px;">Phone</th>
-              <th style="width: 140px;">GSTIN</th>
-              <th style="width: 160px;">Actions</th>
+              <th>Customer Code</th>
+              <th>Customer Details</th>
+              <th>Company Type</th>
+              <th>GST Registration</th>
+              <th>Opening Balance</th>
+              <th>Status</th>
+              <th style="width: 140px; text-align: right;">Actions</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-if="store.loading">
-              <td colspan="6" class="muted">Loading…</td>
+            <tr v-if="store.loading" class="no-hover">
+              <td colspan="7" class="loading-state-row">
+                <div class="loader-spinner"></div>
+                <span class="muted font-semibold">Loading contact database...</span>
+              </td>
             </tr>
-            <tr v-else-if="store.items.length === 0">
-              <td colspan="6" class="muted">No contacts found.</td>
+            <tr v-else-if="store.items.length === 0" class="no-hover">
+              <td colspan="7" class="empty-state-row">
+                <div class="empty-emoji">👥</div>
+                <div class="empty-title">No contacts found</div>
+                <div class="empty-desc">Get started by creating your first Zoho-style progressive customer contact or import a CSV master record.</div>
+                <div class="empty-actions">
+                  <Button @click="openCreate">Onboard Customer</Button>
+                </div>
+              </td>
             </tr>
-            <tr v-for="row in store.items" :key="row.contact_id">
-              <td>{{ row.name }}</td>
-              <td class="pill">{{ row.contact_type }}</td>
-              <td class="muted">{{ row.email || '—' }}</td>
-              <td class="muted">{{ row.phone || '—' }}</td>
-              <td class="mono">{{ row.gstin || '—' }}</td>
-              <td class="actions">
-                <Button variant="secondary" @click="openEdit(row)">Edit</Button>
+            <tr v-for="c in store.items" :key="c.contact_id" class="customer-row">
+              <td class="mono font-bold">{{ c.customer_code }}</td>
+              <td>
+                <div class="customer-info-cell">
+                  <div class="customer-display-name">{{ c.display_name }}</div>
+                  <div class="customer-legal-name">{{ c.customer_name }}</div>
+                  <div class="customer-meta" v-if="c.email || c.mobile">
+                    <span v-if="c.email" class="meta-item">{{ c.email }}</span>
+                    <span v-if="c.email && c.mobile" class="bullet">•</span>
+                    <span v-if="c.mobile" class="meta-item">{{ c.mobile }}</span>
+                  </div>
+                </div>
+              </td>
+              <td>
+                <span class="type-badge" :class="c.customer_type">
+                  {{ c.customer_type === 'business' ? 'Business' : 'Individual' }}
+                </span>
+              </td>
+              <td>
+                <div class="compliance-cell">
+                  <div class="gst-reg-type">{{ formatGstRegType(c.gst_registration_type) }}</div>
+                  <div v-if="c.gstin" class="mono gstin-text">{{ c.gstin }}</div>
+                  <div v-else class="unregistered-text">Unregistered / Consumer</div>
+                </div>
+              </td>
+              <td>
+                <div class="balance-cell" :class="{ 'has-balance': c.opening_balance > 0 }">
+                  <span class="balance-amount">{{ formatCurrency(c.opening_balance) }}</span>
+                  <span v-if="c.opening_balance > 0" class="balance-type-badge" :class="c.opening_balance_type">
+                    {{ c.opening_balance_type === 'debit' ? 'Dr (A/R)' : 'Cr' }}
+                  </span>
+                </div>
+              </td>
+              <td>
+                <button
+                  type="button"
+                  class="status-toggle-btn"
+                  :class="{ active: c.is_active }"
+                  @click="toggleCustomerStatus(c)"
+                >
+                  {{ c.is_active ? 'Active' : 'Inactive' }}
+                </button>
+              </td>
+              <td>
+                <div class="actions-cell">
+                  <button type="button" class="action-btn edit" title="Edit Contact Details" @click="openEdit(c)">
+                    ✏️ Edit
+                  </button>
+                  <button type="button" class="action-btn delete" title="Soft Delete Contact" @click="deleteCustomer(c)">
+                    🗑️ Delete
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -56,242 +128,441 @@
       </div>
     </Card>
 
-    <Modal :open="modalOpen" :title="editing ? 'Edit Contact' : 'New Contact'" @close="closeModal">
-      <div class="form-grid">
-        <label class="span2">
-          <div class="label">Name</div>
-          <input v-model="form.name" class="input" placeholder="Contact name" />
-        </label>
-        <label>
-          <div class="label">Type</div>
-          <select v-model="form.contact_type" class="input">
-            <option value="customer">customer</option>
-            <option value="vendor">vendor</option>
-            <option value="both">both</option>
-          </select>
-        </label>
-        <label>
-          <div class="label">Currency</div>
-          <input v-model="form.currency" class="input" placeholder="INR" />
-        </label>
-        <label>
-          <div class="label">Email</div>
-          <input v-model="form.email" class="input" placeholder="name@company.com" />
-        </label>
-        <label>
-          <div class="label">Phone</div>
-          <input v-model="form.phone" class="input" placeholder="+91…" />
-        </label>
-        <label>
-          <div class="label">GSTIN</div>
-          <input v-model="form.gstin" class="input" placeholder="Optional" />
-        </label>
-        <label>
-          <div class="label">PAN</div>
-          <input v-model="form.pan" class="input" placeholder="Optional" />
-        </label>
-        <label class="span2">
-          <div class="label">Payment Terms</div>
-          <input v-model="form.payment_terms" class="input" placeholder="e.g. Net 15" />
-        </label>
-      </div>
+    <!-- Modals and Drawer Dialogs -->
+    <CreateEditCustomerModal
+      :open="modalOpen"
+      :editing="editingCustomer"
+      @close="modalOpen = false"
+      @saved="refresh"
+    />
 
-      <template #footer>
-        <Button variant="secondary" @click="closeModal">Cancel</Button>
-        <Button :loading="saving" @click="save">{{ editing ? 'Save' : 'Create' }}</Button>
-      </template>
-    </Modal>
+    <CSVImportWizard
+      :open="wizardOpen"
+      @close="wizardOpen = false"
+      @imported="refresh"
+    />
   </div>
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useContactsStore } from '../../stores/contacts'
 import { useToastStore } from '../../stores/toast'
 import Button from '../../components/ui/Button.vue'
 import Card from '../../components/ui/Card.vue'
-import Modal from '../../components/ui/Modal.vue'
 import PageHeader from '../../components/ui/PageHeader.vue'
+import CreateEditCustomerModal from './CreateEditCustomerModal.vue'
+import CSVImportWizard from './CSVImportWizard.vue'
 
 const store = useContactsStore()
 const toast = useToastStore()
 
-const q = ref('')
-const typeFilter = ref('')
-const importing = ref(false)
+const searchQuery = ref('')
+const statusFilter = ref('')
 
 const modalOpen = ref(false)
-const saving = ref(false)
-const editing = ref(null)
-
-const form = reactive({
-  contact_type: 'customer',
-  name: '',
-  email: '',
-  phone: '',
-  gstin: '',
-  pan: '',
-  payment_terms: '',
-  currency: 'INR',
-})
+const wizardOpen = ref(false)
+const editingCustomer = ref(null)
 
 const refresh = async () => {
-  await store.fetchList({ page: 1, limit: 200, q: q.value, contact_type: typeFilter.value })
+  const params = {}
+  if (searchQuery.value) params.q = searchQuery.value
+  if (statusFilter.value === 'active') params.is_active = true
+  if (statusFilter.value === 'inactive') params.is_active = false
+  
+  try {
+    await store.fetchList(params)
+  } catch (e) {
+    toast.error('Failed to load contacts list.')
+  }
 }
 
 onMounted(refresh)
 
-const onPickCsv = async (e) => {
-  const file = e.target.files?.[0]
-  e.target.value = ''
-  if (!file) return
-  importing.value = true
+function clearFilters() {
+  searchQuery.value = ''
+  statusFilter.value = ''
+  refresh()
+}
+
+function openCreate() {
+  editingCustomer.value = null
+  modalOpen.value = true
+}
+
+function openEdit(customer) {
+  editingCustomer.value = customer
+  modalOpen.value = true
+}
+
+async function deleteCustomer(customer) {
+  const confirmText = `Are you sure you want to delete contact '${customer.display_name}'? This will soft delete their record but maintain ledger historical records.`
+  if (window.confirm(confirmText)) {
+    try {
+      await store.delete(customer.contact_id)
+      toast.success('Contact deleted successfully')
+      await refresh()
+    } catch (e) {
+      toast.error(e || 'Delete failed')
+    }
+  }
+}
+
+async function toggleCustomerStatus(customer) {
+  const newStatus = !customer.is_active
   try {
-    const res = await store.importCsv(file)
-    toast.success(`Imported ${res.created || 0} contacts`)
+    await store.update(customer.contact_id, {
+      is_active: newStatus
+    })
+    toast.success(`Contact set to ${newStatus ? 'Active' : 'Inactive'}`)
     await refresh()
-  } catch (err) {
-    toast.error('CSV import failed (need headers: contact_type,name)')
-  } finally {
-    importing.value = false
-  }
-}
-
-const openCreate = () => {
-  editing.value = null
-  Object.assign(form, { contact_type: 'customer', name: '', email: '', phone: '', gstin: '', pan: '', payment_terms: '', currency: 'INR' })
-  modalOpen.value = true
-}
-
-const openEdit = (row) => {
-  editing.value = row
-  Object.assign(form, {
-    contact_type: row.contact_type,
-    name: row.name,
-    email: row.email || '',
-    phone: row.phone || '',
-    gstin: row.gstin || '',
-    pan: row.pan || '',
-    payment_terms: row.payment_terms || '',
-    currency: row.currency || 'INR',
-  })
-  modalOpen.value = true
-}
-
-const closeModal = () => {
-  modalOpen.value = false
-}
-
-const save = async () => {
-  if (!form.name) {
-    toast.error('Name is required')
-    return
-  }
-  saving.value = true
-  try {
-    const payload = {
-      contact_type: form.contact_type,
-      name: form.name,
-      email: form.email || null,
-      phone: form.phone || null,
-      gstin: form.gstin || null,
-      pan: form.pan || null,
-      payment_terms: form.payment_terms || null,
-      currency: form.currency || 'INR',
-    }
-    if (editing.value) {
-      await store.update(editing.value.contact_id, payload)
-      toast.success('Contact updated')
-    } else {
-      await store.create(payload)
-      toast.success('Contact created')
-    }
-    modalOpen.value = false
   } catch (e) {
-    toast.error('Save failed')
-  } finally {
-    saving.value = false
+    toast.error('Failed to update status')
   }
+}
+
+function formatCurrency(val) {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    minimumFractionDigits: 2
+  }).format(val || 0)
+}
+
+function formatGstRegType(type) {
+  const maps = {
+    regular: 'Registered Business',
+    composition: 'Composition Scheme',
+    unregistered: 'Unregistered Business',
+    sez: 'SEZ Special Zone',
+    consumer: 'Consumer / B2C'
+  }
+  return maps[type] || type
 }
 </script>
 
 <style scoped>
 .page {
-  max-width: 1100px;
+  max-width: 1200px;
   margin: 0 auto;
+  padding: 16px;
 }
-.card {
-  padding: 14px;
+
+.list-card {
+  padding: 20px;
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
 }
+
+.btn-icon {
+  margin-right: 4px;
+}
+
+/* Toolbar & Filters */
 .toolbar {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
 }
-.input {
-  height: 38px;
-  border-radius: 10px;
-  border: 1px solid #d1d5db;
-  padding: 0 10px;
-  font-size: 13px;
-  outline: none;
-  background: #fff;
+
+.search-box {
+  flex: 1;
+  min-width: 300px;
+  position: relative;
+  display: flex;
+  align-items: center;
 }
-.input:focus {
-  border-color: #1a73e8;
-  box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.15);
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  color: #94a3b8;
+  font-size: 14px;
 }
+
+.search-input {
+  padding-left: 36px !important;
+  width: 100%;
+}
+
+.filter-select {
+  width: 160px;
+}
+
+.clear-btn {
+  color: #64748b;
+}
+
+/* Table Design */
 .table-wrap {
   overflow: auto;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
 }
+
 .table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  background: #ffffff;
 }
-.table th,
-.table td {
-  padding: 10px 8px;
-  border-bottom: 1px solid #eef2f7;
+
+.table th {
+  background: #f8fafc;
+  font-weight: 700;
+  color: #334155;
+  padding: 14px 16px;
+  border-bottom: 1px solid #e2e8f0;
   text-align: left;
 }
-.table tbody tr:hover {
-  background: #f9fafb;
+
+.table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
 }
+
+.customer-row:hover {
+  background: #f8fafc;
+}
+
+.no-hover:hover {
+  background: transparent !important;
+}
+
 .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
-.pill {
-  text-transform: lowercase;
-  color: #374151;
+
+.font-bold {
+  font-weight: 700;
 }
-.actions {
+
+/* Loading & Empty States */
+.loading-state-row, .empty-state-row {
+  text-align: center;
+  padding: 64px 32px !important;
+}
+
+.loader-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #1a73e8;
+  border-radius: 50%;
+  margin: 0 auto 12px auto;
+  animation: spin 0.8s linear infinite;
+}
+
+.empty-emoji {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.empty-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 6px;
+}
+
+.empty-desc {
+  font-size: 13px;
+  color: #64748b;
+  max-width: 400px;
+  margin: 0 auto 20px auto;
+  line-height: 1.5;
+}
+
+.empty-actions {
   display: flex;
+  justify-content: center;
+}
+
+/* Cells formatting */
+.customer-info-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.customer-display-name {
+  font-weight: 700;
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.customer-legal-name {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.customer-meta {
+  font-size: 11px;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.bullet {
+  color: #cbd5e1;
+}
+
+.type-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 99px;
+  text-transform: capitalize;
+}
+
+.type-badge.business {
+  background: #eff6ff;
+  color: #1e40af;
+}
+
+.type-badge.individual {
+  background: #fdf2f8;
+  color: #9d174d;
+}
+
+.compliance-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gst-reg-type {
+  font-size: 11px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.gstin-text {
+  color: #1e293b;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.unregistered-text {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.balance-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.balance-cell.has-balance {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.balance-amount {
+  font-size: 13px;
+}
+
+.balance-type-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.balance-type-badge.debit {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.balance-type-badge.credit {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+/* Status Active/Inactive Toggle Button */
+.status-toggle-btn {
+  border: none;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.status-toggle-btn.active {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.status-toggle-btn:hover {
+  opacity: 0.85;
+}
+
+/* Actions list */
+.actions-cell {
+  display: flex;
+  justify-content: flex-end;
   gap: 8px;
 }
-.muted {
-  color: #6b7280;
-}
-.form-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-.span2 {
-  grid-column: span 2;
-}
-.label {
+
+.action-btn {
+  border: 1px solid transparent;
+  background: transparent;
   font-size: 12px;
-  color: #6b7280;
-  margin-bottom: 6px;
   font-weight: 600;
-}
-.hidden {
-  display: none;
-}
-.file-btn {
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
   display: inline-flex;
+  align-items: center;
+}
+
+.action-btn.edit {
+  color: #1a73e8;
+  background: #f0f7ff;
+}
+
+.action-btn.edit:hover {
+  background: #dbeafe;
+}
+
+.action-btn.delete {
+  color: #ef4444;
+  background: #fdf2f2;
+}
+
+.action-btn.delete:hover {
+  background: #fee2e2;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Mobile Layout */
+@media (max-width: 1024px) {
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .search-box {
+    width: 100%;
+  }
+  .filter-select {
+    width: 100%;
+  }
 }
 </style>
-

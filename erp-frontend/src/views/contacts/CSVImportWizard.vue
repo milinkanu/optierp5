@@ -156,7 +156,7 @@
 
 <script setup>
 import { ref, reactive, watch } from 'vue'
-import { useCustomersStore } from '../../stores/customers'
+import { useContactsStore } from '../../stores/contacts'
 import { useToastStore } from '../../stores/toast'
 import Button from '../../components/ui/Button.vue'
 
@@ -165,7 +165,7 @@ const props = defineProps({
 })
 const emit = defineEmits(['close', 'imported'])
 
-const store = useCustomersStore()
+const store = useContactsStore()
 const toast = useToastStore()
 
 const step = ref(1)
@@ -348,30 +348,16 @@ async function runCsvImport() {
 }
 
 function downloadSampleCSV() {
-  const headers = dbFields.map(f => f.key).join(',')
+  const headers = 'Name,Code,Type,GSTIN,Email,Mobile,OpeningBal,BalType'
   const sampleRow = [
-    'OptiReach Enterprise Solutions Private Limited',
-    'OptiReach ERP',
-    'business',
-    'finance@optireach.com',
-    '9876543210',
-    '+914041234567',
-    'regular',
-    '36AAFCD5862R1ZO',
-    'AAFCD5862R',
-    'INR',
-    'Net 30',
-    '500000',
-    '15000',
-    'debit',
-    'Suite 805, 8th Floor, Tech Hub Towers',
-    'Hyderabad',
-    'Telangana',
-    '500081',
-    'Suite 805, 8th Floor, Tech Hub Towers',
-    'Hyderabad',
-    'Telangana',
-    '500081'
+    '"OptiReach Enterprise Solutions Private Limited"',
+    '"CUST-IMP-001"',
+    '"business"',
+    '"27AADCB8374D1Z3"',
+    '"finance@optireach.com"',
+    '"9876543210"',
+    '"15000"',
+    '"debit"'
   ].join(',')
 
   const csvContent = "data:text/csv;charset=utf-8," + headers + "\n" + sampleRow

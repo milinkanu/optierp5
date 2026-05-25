@@ -30,14 +30,24 @@ class TestCustomerManagement:
             if user_row:
                 user_id, company_id = user_row
             else:
-                company_id = uuid4()
-                user_id = uuid4()
-                # Create user in db so foreign keys work
-                conn.execute(
-                    text("INSERT INTO users (user_id, company_id, email, password_hash, full_name, created_at, updated_at) "
-                         "VALUES (:user_id, :company_id, 'admin@test.com', 'dummy', 'Admin User', now(), now())"),
-                    {"user_id": str(user_id), "company_id": str(company_id)}
-                )
+                # Try to fetch ANY existing user
+                any_user = conn.execute(text("SELECT user_id, company_id FROM users LIMIT 1")).fetchone()
+                if any_user:
+                    user_id, company_id = any_user
+                else:
+                    # Database is completely empty, insert a company and then insert a user
+                    company_id = uuid4()
+                    user_id = uuid4()
+                    conn.execute(
+                        text("INSERT INTO companies (company_id, company_name, company_type, pan, gst_type, primary_state, onboarding_completed, created_at, updated_at) "
+                             "VALUES (:company_id, 'Test Company', 'pvt_ltd', 'ABCDE1234F', 'regular', 'Maharashtra', true, now(), now())"),
+                        {"company_id": str(company_id)}
+                    )
+                    conn.execute(
+                        text("INSERT INTO users (user_id, company_id, email, password_hash, name, created_at, updated_at) "
+                             "VALUES (:user_id, :company_id, 'admin@test.com', 'dummy', 'Admin User', now(), now())"),
+                        {"user_id": str(user_id), "company_id": str(company_id)}
+                    )
             
             return {
                 'user_id': user_id,
@@ -564,22 +574,22 @@ class TestCustomerManagement:
     # ====================================================
 
     def test_api_validate_gstin(self, client):
-        """Test API endpoint POST /customers/validate-gstin"""
+        """Test API endpoint POST /contacts/validate-gstin"""
         # Valid GSTIN
-        response = client.post("/customers/validate-gstin", json={"gstin": "27AADCB8374D1Z3"})
+        response = client.post("/contacts/validate-gstin", json={"gstin": "27AADCB8374D1Z3"})
         assert response.status_code == 200
         assert response.json()["valid"] is True
         assert response.json()["pan"] == "AADCB8374D"
 
         # Invalid GSTIN
-        response = client.post("/customers/validate-gstin", json={"gstin": "27AAJFU9603R1Z0"})
+        response = client.post("/contacts/validate-gstin", json={"gstin": "27AAJFU9603R1Z0"})
         assert response.status_code == 200
         assert response.json()["valid"] is False
 
     def test_api_prefill_gstin(self, client):
-        """Test API endpoint POST /customers/prefill-gstin"""
+        """Test API endpoint POST /contacts/prefill-gstin"""
         # Valid GSTIN
-        response = client.post("/customers/prefill-gstin", json={"gstin": "27AAJFU9603R1Z9"})
+        response = client.post("/contacts/prefill-gstin", json={"gstin": "27AAJFU9603R1Z9"})
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
@@ -588,7 +598,7 @@ class TestCustomerManagement:
         assert data["data"]["gst_status"] == "Active"
 
         # Invalid GSTIN
-        response = client.post("/customers/prefill-gstin", json={"gstin": "INVALIDGSTIN"})
+        response = client.post("/contacts/prefill-gstin", json={"gstin": "INVALIDGSTIN"})
         assert response.status_code == 400
 
     def test_api_crud_flow(self, client, valid_headers, db, seeded_tenant, cleanup_customers):
@@ -624,7 +634,7 @@ class TestCustomerManagement:
         }
 
         response = client.post(
-            "/customers",
+            "/contacts",
             json=create_payload,
             headers=valid_headers
         )
@@ -634,31 +644,31 @@ class TestCustomerManagement:
         assert data["customer_name"] == "API Tech Corp"
         assert len(data["addresses"]) == 1
         
-        customer_id = data["customer_id"]
-        cleanup_customers.append(customer_id)
+        contact_id = data["contact_id"]
+        cleanup_customers.append(contact_id)
 
         # 2. GET List Customers
         response = client.get(
-            "/customers",
+            "/contacts",
             params={"q": "API Tech Corp"},
             headers=valid_headers
         )
         assert response.status_code == 200
         list_data = response.json()
         assert len(list_data) >= 1
-        assert any(c["customer_id"] == customer_id for c in list_data)
+        assert any(c["contact_id"] == contact_id for c in list_data)
 
         # 3. GET Customer Details
         response = client.get(
-            f"/customers/{customer_id}",
+            f"/contacts/{contact_id}",
             headers=valid_headers
         )
         assert response.status_code == 200
         details_data = response.json()
-        assert details_data["customer_id"] == customer_id
+        assert details_data["contact_id"] == contact_id
         assert details_data["addresses"][0]["attention"] == "API Finance Dept"
 
-        # 4. PUT Update Customer
+        # 4. PATCH Update Customer
         update_payload = {
             "customer_name": "API Tech Corp Updated",
             "display_name": f"API Tech Updated - {uuid4().hex[:4]}",
@@ -675,8 +685,8 @@ class TestCustomerManagement:
                 }
             ]
         }
-        response = client.put(
-            f"/customers/{customer_id}",
+        response = client.patch(
+            f"/contacts/{contact_id}",
             json=update_payload,
             headers=valid_headers
         )
@@ -687,7 +697,7 @@ class TestCustomerManagement:
 
         # 5. DELETE Soft Delete Customer
         response = client.delete(
-            f"/customers/{customer_id}",
+            f"/contacts/{contact_id}",
             headers=valid_headers
         )
         assert response.status_code == 200
@@ -695,7 +705,7 @@ class TestCustomerManagement:
 
         # Check soft delete hides it from lists and details
         response = client.get(
-            f"/customers/{customer_id}",
+            f"/contacts/{contact_id}",
             headers=valid_headers
         )
         assert response.status_code == 404

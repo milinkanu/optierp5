@@ -11,7 +11,7 @@ from uuid import UUID
 
 from fastapi import Depends, Header, HTTPException, status
 from jose import JWTError, jwt
-from pydantic import BaseModel, UUID4
+from pydantic import BaseModel
 
 JWT_SECRET = os.getenv("JWT_SECRET", "YOUR_JWT_SECRET")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
@@ -26,21 +26,21 @@ DEFAULT_USER_ID = os.getenv("FINOPS_DEFAULT_USER_ID", "b1151ffd-e4d3-480a-b5a8-6
 
 
 class TenantContext(BaseModel):
-    company_id: UUID4
-    user_id: UUID4
+    company_id: UUID
+    user_id: UUID
     roles: List[str] = []
 
 
 class TokenPayload(BaseModel):
     sub: str
-    company_id: UUID4
+    company_id: UUID
     user_version: int
     roles: List[str] = []
     delegations: List[dict] = []
     exp: int
 
 
-def create_access_token(subject: str, company_id: UUID4, user_version: int, roles: List[str], delegations: List[dict]) -> str:
+def create_access_token(subject: str, company_id: UUID, user_version: int, roles: List[str], delegations: List[dict]) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=JWT_ACCESS_TOKEN_EXPIRES_MINUTES)
     payload = {
         "sub": subject,
@@ -64,7 +64,7 @@ def verify_jwt_token(token: str) -> TokenPayload:
 
 def get_current_context(
     authorization: str | None = Header(None, alias="Authorization"),
-    x_tenant_id: UUID4 | None = Header(None, alias="X-Tenant-ID"),
+    x_tenant_id: UUID | None = Header(None, alias="X-Tenant-ID"),
 ) -> TenantContext:
     if authorization is None or not authorization.startswith("Bearer "):
         if x_tenant_id is not None:

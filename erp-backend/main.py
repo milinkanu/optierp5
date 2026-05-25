@@ -12,7 +12,7 @@ import traceback
 
 from routes import auth, companies, health, invoices, onboarding, transactions, quotes, sales_orders
 from routes import chart_of_accounts, contacts, items
-from routes import recurring_invoices, delivery_challans, payments, credit_notes, customers
+from routes import recurring_invoices, delivery_challans, payments, credit_notes
 from routes.inspector import router as inspector_router
 from services.scheduler import start_scheduler, stop_scheduler
 
@@ -119,7 +119,6 @@ app.include_router(recurring_invoices.router)
 app.include_router(delivery_challans.router)
 app.include_router(payments.router)
 app.include_router(credit_notes.router)
-app.include_router(customers.router)
 app.include_router(inspector_router)
 
 if __name__ == '__main__':

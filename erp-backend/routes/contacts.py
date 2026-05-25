@@ -1,249 +1,221 @@
 from __future__ import annotations
 
-import csv
-import io
-import os
-from datetime import datetime
-from uuid import UUID, uuid4
+import json
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from sqlalchemy import select, update
+from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile, status
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 
-from models.contacts import ContactCreateRequest, ContactResponse, ContactUpdateRequest
-from models.db_models import Party
-from utils.auth import TenantContext, get_current_context
+from models.contacts import (
+    ContactCreateRequest,
+    ContactUpdateRequest,
+    ContactResponse,
+    CustomerAddressResponse,
+    CustomerContactResponse,
+    CustomerCustomFieldResponse,
+)
+from models.customers import CustomerCreateRequest as BackendCustomerCreateRequest, CustomerUpdateRequest as BackendCustomerUpdateRequest
+from services.common import TenantContext, get_current_context
 from utils.db import get_db_session
+from services import customer_service
 
 router = APIRouter(prefix="/contacts", tags=["contacts"])
 
-ALLOWED_CONTACT_TYPES = {"customer", "vendor", "both"}
+
+class GSTINRequest(BaseModel):
+    gstin: str
 
 
-def _contact_type_to_party_type(contact_type: str) -> str:
-    if contact_type not in ALLOWED_CONTACT_TYPES:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid contact_type")
-    return contact_type
+def _map_to_contact_response(c) -> ContactResponse:
+    """Explicitly map a Customer DB model to a ContactResponse"""
+    return ContactResponse(
+        contact_id=c.customer_id,
+        contact_type="customer",
+        company_id=c.company_id,
+        customer_code=c.customer_code,
+        customer_name=c.customer_name,
+        customer_type=c.customer_type,
+        display_name=c.display_name,
+        name=c.display_name,
+        currency=c.currency,
+        email=c.email,
+        mobile=c.mobile,
+        phone=c.phone,
+        gst_registration_type=c.gst_registration_type,
+        gstin=c.gstin,
+        pan=c.pan,
+        payment_terms=c.payment_terms,
+        credit_limit=float(c.credit_limit) if c.credit_limit is not None else 0.0,
+        opening_balance=float(c.opening_balance) if c.opening_balance is not None else 0.0,
+        opening_balance_type=c.opening_balance_type,
+        msme_status=c.msme_status,
+        msme_registration_no=c.msme_registration_no,
+        cin=c.cin,
+        invoice_delivery_preference=c.invoice_delivery_preference,
+        is_active=c.is_active,
+        created_at=c.created_at,
+        updated_at=c.updated_at,
+        addresses=[
+            CustomerAddressResponse(
+                address_id=a.address_id,
+                address_type=a.address_type,
+                attention=a.attention,
+                address_line1=a.address_line1,
+                address_line2=a.address_line2,
+                city=a.city,
+                state=a.state,
+                zip_code=a.zip_code,
+                country=a.country,
+                phone=a.phone,
+            )
+            for a in c.addresses
+        ],
+        contacts=[
+            CustomerContactResponse(
+                contact_id=ct.contact_id,
+                first_name=ct.first_name,
+                last_name=ct.last_name,
+                email=ct.email,
+                phone=ct.phone,
+                mobile=ct.mobile,
+                designation=ct.designation,
+                is_primary=ct.is_primary,
+            )
+            for ct in c.contacts
+        ],
+        custom_fields=[
+            CustomerCustomFieldResponse(
+                field_id=cf.field_id,
+                field_key=cf.field_key,
+                field_value=cf.field_value,
+            )
+            for cf in c.custom_fields
+        ],
+        tags=[t.tag_name for t in c.tags],
+    )
 
 
+# Create Contact (Customer)
 @router.post("", response_model=ContactResponse, status_code=status.HTTP_201_CREATED)
 def create_contact(
     payload: ContactCreateRequest,
     current_context: TenantContext = Depends(get_current_context),
     db: Session = Depends(get_db_session),
 ):
-    now = datetime.utcnow()
-    row = Party(
-        company_id=current_context.company_id,
-        party_name=payload.name,
-        party_type=_contact_type_to_party_type(payload.contact_type),
-        gstin=payload.gstin,
-        pan=payload.pan,
-        email=str(payload.email) if payload.email else None,
-        phone=payload.phone,
-        payment_terms=payload.payment_terms,
-        currency=payload.currency,
-        billing_address=payload.billing_address,
-        shipping_address=payload.shipping_address,
-        created_at=now,
-        updated_at=now,
-    )
-    db.add(row)
-    db.commit()
-    db.refresh(row)
-    return ContactResponse(
-        contact_id=row.party_id,
-        contact_type=row.party_type,
-        name=row.party_name,
-        email=row.email,
-        phone=row.phone,
-        gstin=row.gstin,
-        pan=row.pan,
-        payment_terms=row.payment_terms,
-        currency=row.currency,
-        billing_address=row.billing_address,
-        shipping_address=row.shipping_address,
-        created_at=row.created_at,
-        updated_at=row.updated_at,
-    )
+    try:
+        # Map ContactCreateRequest to CustomerCreateRequest internally
+        service_payload = BackendCustomerCreateRequest(
+            customer_code=payload.customer_code,
+            customer_name=payload.customer_name,
+            customer_type=payload.customer_type,
+            display_name=payload.display_name,
+            currency=payload.currency,
+            email=payload.email,
+            mobile=payload.mobile,
+            phone=payload.phone,
+            gst_registration_type=payload.gst_registration_type,
+            gstin=payload.gstin,
+            pan=payload.pan,
+            payment_terms=payload.payment_terms,
+            credit_limit=payload.credit_limit,
+            opening_balance=payload.opening_balance,
+            opening_balance_type=payload.opening_balance_type,
+            msme_status=payload.msme_status,
+            msme_registration_no=payload.msme_registration_no,
+            cin=payload.cin,
+            invoice_delivery_preference=payload.invoice_delivery_preference,
+            addresses=[
+                dict(
+                    address_type=a.address_type,
+                    attention=a.attention,
+                    address_line1=a.address_line1,
+                    address_line2=a.address_line2,
+                    city=a.city,
+                    state=a.state,
+                    zip_code=a.zip_code,
+                    country=a.country,
+                    phone=a.phone,
+                )
+                for a in payload.addresses
+            ],
+            contacts=[
+                dict(
+                    first_name=ct.first_name,
+                    last_name=ct.last_name,
+                    email=ct.email,
+                    phone=ct.phone,
+                    mobile=ct.mobile,
+                    designation=ct.designation,
+                    is_primary=ct.is_primary,
+                )
+                for ct in payload.contacts
+            ],
+            custom_fields=[
+                dict(field_key=cf.field_key, field_value=cf.field_value)
+                for cf in payload.custom_fields
+            ],
+            tags=payload.tags,
+        )
+
+        customer = customer_service.create_customer(
+            db=db,
+            payload=service_payload,
+            company_id=current_context.company_id,
+            user_id=current_context.user_id,
+        )
+        # Load from DB with relationships
+        customer_db = customer_service.get_customer(db, customer.customer_id, current_context.company_id)
+        return _map_to_contact_response(customer_db)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
+# List Contacts (filtered by query and is_active, forced to customer type)
 @router.get("", response_model=list[ContactResponse])
 def list_contacts(
+    page: int = Query(1, ge=1),
+    limit: int = Query(25, ge=1, le=500),
+    q: str | None = Query(None),
+    is_active: bool | None = Query(None),
     current_context: TenantContext = Depends(get_current_context),
     db: Session = Depends(get_db_session),
-    page: int = Query(1, ge=1),
-    limit: int = Query(25, ge=1, le=1000),
-    q: str | None = Query(None),
-    contact_type: str | None = Query(None),
 ):
-    if os.getenv('FINOPS_USE_DATABASE', 'true').lower() == 'false':
-        mock_contacts = [
-            ContactResponse(
-                contact_id=UUID("ce3ba27e-128a-45bd-b65d-9c7f1db8816c"),
-                contact_type="customer",
-                name="Milin Kanu",
-                email="milin@optireach.com",
-                phone="+919876543210",
-                gstin="27AAAAA1111A1Z1",
-                pan="AAAAA1111A",
-                payment_terms="Net 30",
-                currency="INR",
-                billing_address={"street": "123 Main St", "city": "Mumbai", "state": "Maharashtra", "zip": "400001"},
-                shipping_address={"street": "123 Main St", "city": "Mumbai", "state": "Maharashtra", "zip": "400001"},
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
-            ),
-            ContactResponse(
-                contact_id=UUID("555ff0c8-141f-44f3-8964-bfee5bd8f4bf"),
-                contact_type="customer",
-                name="OptiReach Customer",
-                email="customer@optireach.com",
-                phone="+919876543211",
-                gstin="27BBBBB2222B2Z2",
-                pan="BBBBB2222B",
-                payment_terms="Due on Receipt",
-                currency="INR",
-                billing_address={"street": "456 Corporate Blvd", "city": "Pune", "state": "Maharashtra", "zip": "411001"},
-                shipping_address={"street": "456 Corporate Blvd", "city": "Pune", "state": "Maharashtra", "zip": "411001"},
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
-            ),
-            ContactResponse(
-                contact_id=UUID("9a2e6f1a-b31c-421b-8cd7-1f4f5a3b2c6d"),
-                contact_type="vendor",
-                name="Wayne Enterprises",
-                email="billing@wayne.com",
-                phone="+15550199",
-                gstin=None,
-                pan=None,
-                payment_terms="Net 15",
-                currency="USD",
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
-            )
-        ]
-        if contact_type:
-            mock_contacts = [c for c in mock_contacts if c.contact_type == contact_type]
-        if q:
-            mock_contacts = [c for c in mock_contacts if q.lower() in c.name.lower()]
-        return mock_contacts
-
-    stmt = select(Party).where(Party.company_id == current_context.company_id)
-    if q:
-        stmt = stmt.where(Party.party_name.ilike(f"%{q}%"))
-    if contact_type:
-        stmt = stmt.where(Party.party_type == _contact_type_to_party_type(contact_type))
-    stmt = stmt.order_by(Party.party_name).offset((page - 1) * limit).limit(limit)
-    rows = db.scalars(stmt).all()
-    return [
-        ContactResponse(
-            contact_id=r.party_id,
-            contact_type=r.party_type,
-            name=r.party_name,
-            email=r.email,
-            phone=r.phone,
-            gstin=r.gstin,
-            pan=r.pan,
-            payment_terms=r.payment_terms,
-            currency=r.currency,
-            billing_address=r.billing_address,
-            shipping_address=r.shipping_address,
-            created_at=r.created_at,
-            updated_at=r.updated_at,
-        )
-        for r in rows
-    ]
+    customers = customer_service.list_customers(
+        db=db,
+        company_id=current_context.company_id,
+        page=page,
+        limit=limit,
+        q=q,
+        is_active=is_active,
+    )
+    # Ensure PAN is decrypted for response mapping
+    results = []
+    for c in customers:
+        if c.pan:
+            try:
+                c.pan = customer_service.decrypt_pan(c.pan)
+            except Exception:
+                pass
+        results.append(_map_to_contact_response(c))
+    return results
 
 
+# Get Contact Detail
 @router.get("/{contact_id}", response_model=ContactResponse)
 def get_contact(
     contact_id: UUID,
     current_context: TenantContext = Depends(get_current_context),
     db: Session = Depends(get_db_session),
 ):
-    if os.getenv('FINOPS_USE_DATABASE', 'true').lower() == 'false':
-        for c in [
-            ContactResponse(
-                contact_id=UUID("ce3ba27e-128a-45bd-b65d-9c7f1db8816c"),
-                contact_type="customer",
-                name="Milin Kanu",
-                email="milin@optireach.com",
-                phone="+919876543210",
-                gstin="27AAAAA1111A1Z1",
-                pan="AAAAA1111A",
-                payment_terms="Net 30",
-                currency="INR",
-                billing_address={"street": "123 Main St", "city": "Mumbai", "state": "Maharashtra", "zip": "400001"},
-                shipping_address={"street": "123 Main St", "city": "Mumbai", "state": "Maharashtra", "zip": "400001"},
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
-            ),
-            ContactResponse(
-                contact_id=UUID("555ff0c8-141f-44f3-8964-bfee5bd8f4bf"),
-                contact_type="customer",
-                name="OptiReach Customer",
-                email="customer@optireach.com",
-                phone="+919876543211",
-                gstin="27BBBBB2222B2Z2",
-                pan="BBBBB2222B",
-                payment_terms="Due on Receipt",
-                currency="INR",
-                billing_address={"street": "456 Corporate Blvd", "city": "Pune", "state": "Maharashtra", "zip": "411001"},
-                shipping_address={"street": "456 Corporate Blvd", "city": "Pune", "state": "Maharashtra", "zip": "411001"},
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
-            ),
-            ContactResponse(
-                contact_id=UUID("9a2e6f1a-b31c-421b-8cd7-1f4f5a3b2c6d"),
-                contact_type="vendor",
-                name="Wayne Enterprises",
-                email="billing@wayne.com",
-                phone="+15550199",
-                gstin=None,
-                pan=None,
-                payment_terms="Net 15",
-                currency="USD",
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
-            )
-        ]:
-            if c.contact_id == contact_id:
-                return c
-        return ContactResponse(
-            contact_id=contact_id,
-            contact_type="customer",
-            name="Mock Contact",
-            email="mock@example.com",
-            currency="INR",
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-        )
-
-    row = db.scalar(
-        select(Party)
-        .where(Party.company_id == current_context.company_id)
-        .where(Party.party_id == contact_id)
-    )
-    if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contact not found")
-    return ContactResponse(
-        contact_id=row.party_id,
-        contact_type=row.party_type,
-        name=row.party_name,
-        email=row.email,
-        phone=row.phone,
-        gstin=row.gstin,
-        pan=row.pan,
-        payment_terms=row.payment_terms,
-        currency=row.currency,
-        billing_address=row.billing_address,
-        shipping_address=row.shipping_address,
-        created_at=row.created_at,
-        updated_at=row.updated_at,
-    )
+    try:
+        customer = customer_service.get_customer(db, contact_id, current_context.company_id)
+        return _map_to_contact_response(customer)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
+# Update Contact
 @router.patch("/{contact_id}", response_model=ContactResponse)
 def update_contact(
     contact_id: UUID,
@@ -251,45 +223,69 @@ def update_contact(
     current_context: TenantContext = Depends(get_current_context),
     db: Session = Depends(get_db_session),
 ):
-    values = payload.model_dump(exclude_unset=True)
-    if "contact_type" in values:
-        values["party_type"] = _contact_type_to_party_type(values.pop("contact_type"))
-    if "name" in values:
-        values["party_name"] = values.pop("name")
-    if "email" in values:
-        values["email"] = str(values["email"]) if values["email"] else None
-    if not values:
-        return get_contact(contact_id, current_context, db)
+    try:
+        # Convert Pydantic fields to CustomerUpdateRequest schema
+        update_data = payload.model_dump(exclude_unset=True)
+        addresses_data = update_data.pop("addresses", None)
+        contacts_data = update_data.pop("contacts", None)
+        cf_data = update_data.pop("custom_fields", None)
+        tags_data = update_data.pop("tags", None)
 
-    values["updated_at"] = datetime.utcnow()
-    row = db.execute(
-        update(Party)
-        .where(Party.company_id == current_context.company_id)
-        .where(Party.party_id == contact_id)
-        .values(**values)
-        .returning(Party)
-    ).fetchone()
-    if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contact not found")
-    db.commit()
-    result = row[0]
-    return ContactResponse(
-        contact_id=result.party_id,
-        contact_type=result.party_type,
-        name=result.party_name,
-        email=result.email,
-        phone=result.phone,
-        gstin=result.gstin,
-        pan=result.pan,
-        payment_terms=result.payment_terms,
-        currency=result.currency,
-        billing_address=result.billing_address,
-        shipping_address=result.shipping_address,
-        created_at=result.created_at,
-        updated_at=result.updated_at,
-    )
+        service_payload = BackendCustomerUpdateRequest(
+            **update_data,
+            addresses=addresses_data,
+            contacts=contacts_data,
+            custom_fields=cf_data,
+            tags=tags_data,
+        )
+
+        customer = customer_service.update_customer(
+            db=db,
+            customer_id=contact_id,
+            payload=service_payload,
+            company_id=current_context.company_id,
+            user_id=current_context.user_id,
+        )
+        customer_db = customer_service.get_customer(db, customer.customer_id, current_context.company_id)
+        return _map_to_contact_response(customer_db)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
+# Soft Delete Contact
+@router.delete("/{contact_id}")
+def delete_contact(
+    contact_id: UUID,
+    current_context: TenantContext = Depends(get_current_context),
+    db: Session = Depends(get_db_session),
+):
+    try:
+        customer_service.delete_customer(db, contact_id, current_context.company_id)
+        return {"success": True, "message": "Contact deleted successfully"}
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+# Validate GSTIN Checksum
+@router.post("/validate-gstin")
+def validate_gstin(payload: GSTINRequest):
+    is_valid = customer_service.validate_gstin_checksum(payload.gstin)
+    if is_valid:
+        return {"valid": True, "pan": customer_service.extract_pan_from_gstin(payload.gstin)}
+    return {"valid": False, "detail": "Invalid GSTIN format or checksum"}
+
+
+# Prefill GSTIN Details (Mock)
+@router.post("/prefill-gstin")
+def prefill_gstin(payload: GSTINRequest):
+    try:
+        details = customer_service.prefill_gstin_details(payload.gstin)
+        return {"success": True, "data": details}
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+# Bulk Import CSV with savepoint transaction isolation
 @router.post("/import-csv")
 async def import_contacts_csv(
     file: UploadFile = File(...),
@@ -297,43 +293,31 @@ async def import_contacts_csv(
     db: Session = Depends(get_db_session),
 ):
     if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Please upload a .csv file")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file must be a CSV")
+
+    # Fixed Zoho customer mapping for Contacts page uploads
+    column_mapping = {
+        "customer_name": "Name",
+        "customer_code": "Code",
+        "customer_type": "Type",
+        "gstin": "GSTIN",
+        "email": "Email",
+        "mobile": "Mobile",
+        "opening_balance": "OpeningBal",
+        "opening_balance_type": "BalType",
+    }
 
     content = await file.read()
-    text = content.decode("utf-8-sig", errors="replace")
-    reader = csv.DictReader(io.StringIO(text))
+    csv_text = content.decode("utf-8-sig", errors="replace")
 
-    required = {"contact_type", "name"}
-    if reader.fieldnames is None or not required.issubset(set(h.strip() for h in reader.fieldnames)):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CSV must include headers: contact_type,name")
-
-    now = datetime.utcnow()
-    created = 0
-    for raw in reader:
-        contact_type = (raw.get("contact_type") or "").strip().lower()
-        name = (raw.get("name") or "").strip()
-        if not contact_type or not name:
-            continue
-        party_type = _contact_type_to_party_type(contact_type)
-
-        row = Party(
+    try:
+        report = customer_service.bulk_import_customers_csv(
+            db=db,
+            csv_text=csv_text,
+            column_mapping=column_mapping,
             company_id=current_context.company_id,
-            party_name=name,
-            party_type=party_type,
-            email=(raw.get("email") or None),
-            phone=(raw.get("phone") or None),
-            gstin=(raw.get("gstin") or None),
-            pan=(raw.get("pan") or None),
-            payment_terms=(raw.get("payment_terms") or None),
-            currency=(raw.get("currency") or "INR").strip() or "INR",
-            billing_address=None,
-            shipping_address=None,
-            created_at=now,
-            updated_at=now,
+            user_id=current_context.user_id,
         )
-        db.add(row)
-        created += 1
-
-    db.commit()
-    return {"created": created}
-
+        return {"created": report["imported"], "failed": report["failed"], "duplicates": report["duplicates"]}
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

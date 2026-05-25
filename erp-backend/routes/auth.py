@@ -4,11 +4,10 @@ import json
 from datetime import datetime, timedelta
 from hashlib import sha256
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Body
-from pydantic import UUID4
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
@@ -66,7 +65,7 @@ def audit_hash(payload: Any) -> str:
     return sha256(raw.encode()).hexdigest()
 
 
-def log_auth_event(db: Session, company_id: UUID4, actor_id: UUID4, operation: str, before: dict | None = None, after: dict | None = None) -> None:
+def log_auth_event(db: Session, company_id: UUID, actor_id: UUID, operation: str, before: dict | None = None, after: dict | None = None) -> None:
     audit_record = AuditLog(
         company_id=company_id,
         entity_name="auth",
@@ -80,7 +79,7 @@ def log_auth_event(db: Session, company_id: UUID4, actor_id: UUID4, operation: s
     db.add(audit_record)
 
 
-def get_user_by_email(db: Session, email: str, company_id: UUID4 | None = None) -> User | None:
+def get_user_by_email(db: Session, email: str, company_id: UUID | None = None) -> User | None:
     normalized = normalize_email(email)
     query = select(User).where(User.email == normalized)
     if company_id is not None:
@@ -197,15 +196,15 @@ def signup(payload: SignUpRequest, db: Session = Depends(get_db_session)) -> Aut
     )
     log_auth_event(
         db,
-        cast(UUID4, cast(Any, company).company_id),
-        cast(UUID4, cast(Any, user).user_id),
+        cast(UUID, cast(Any, company).company_id),
+        cast(UUID, cast(Any, user).user_id),
         "signup",
         after={"email": str(cast(Any, user).email)},
     )
 
     access_token = create_access_token(
         subject=str(user.user_id),
-        company_id=cast(UUID4, cast(Any, user).company_id),
+        company_id=cast(UUID, cast(Any, user).company_id),
         user_version=int(cast(Any, user).user_version),
         roles=get_role_names(user),
         delegations=[],
@@ -234,7 +233,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db_session)) -> AuthR
 
     access_token = create_access_token(
         subject=str(user.user_id),
-        company_id=cast(UUID4, cast(Any, user).company_id),
+        company_id=cast(UUID, cast(Any, user).company_id),
         user_version=int(cast(Any, user).user_version),
         roles=get_role_names(user),
         delegations=[],
@@ -244,8 +243,8 @@ def login(payload: LoginRequest, db: Session = Depends(get_db_session)) -> AuthR
 
     log_auth_event(
         db,
-        cast(UUID4, cast(Any, user).company_id),
-        cast(UUID4, cast(Any, user).user_id),
+        cast(UUID, cast(Any, user).company_id),
+        cast(UUID, cast(Any, user).user_id),
         "login",
         after={"email": str(cast(Any, user).email)},
     )
@@ -267,7 +266,7 @@ def refresh_token(payload: RefreshTokenRequest, db: Session = Depends(get_db_ses
     new_refresh_token = create_refresh_token_for_user(db, user)
     access_token = create_access_token(
         subject=str(user.user_id),
-        company_id=cast(UUID4, cast(Any, user).company_id),
+        company_id=cast(UUID, cast(Any, user).company_id),
         user_version=int(cast(Any, user).user_version),
         roles=get_role_names(user),
         delegations=[],
@@ -275,8 +274,8 @@ def refresh_token(payload: RefreshTokenRequest, db: Session = Depends(get_db_ses
     db.commit()
     log_auth_event(
         db,
-        cast(UUID4, cast(Any, user).company_id),
-        cast(UUID4, cast(Any, user).user_id),
+        cast(UUID, cast(Any, user).company_id),
+        cast(UUID, cast(Any, user).user_id),
         "refresh_token",
     )
     return AuthResponse(
@@ -317,8 +316,8 @@ def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db
     )
     log_auth_event(
         db,
-        cast(UUID4, cast(Any, user).company_id),
-        cast(UUID4, cast(Any, user).user_id),
+        cast(UUID, cast(Any, user).company_id),
+        cast(UUID, cast(Any, user).user_id),
         "forgot_password",
     )
 
@@ -346,8 +345,8 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db_s
 
     log_auth_event(
         db,
-        cast(UUID4, cast(Any, user).company_id),
-        cast(UUID4, cast(Any, user).user_id),
+        cast(UUID, cast(Any, user).company_id),
+        cast(UUID, cast(Any, user).user_id),
         "reset_password",
     )
     return {"message": "Password has been reset successfully"}
@@ -372,8 +371,8 @@ def verify_email(token: str = Query(...), db: Session = Depends(get_db_session))
 
     log_auth_event(
         db,
-        cast(UUID4, cast(Any, user).company_id),
-        cast(UUID4, cast(Any, user).user_id),
+        cast(UUID, cast(Any, user).company_id),
+        cast(UUID, cast(Any, user).user_id),
         "verify_email",
     )
     return {"message": "Email verified successfully"}
@@ -385,8 +384,8 @@ def me(current_context: TenantContext = Depends(get_current_context), db: Sessio
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return UserResponse(
-        user_id=cast(UUID4, cast(Any, user).user_id),
-        company_id=cast(UUID4, cast(Any, user).company_id),
+        user_id=cast(UUID, cast(Any, user).user_id),
+        company_id=cast(UUID, cast(Any, user).company_id),
         email=str(cast(Any, user).email),
         name=str(cast(Any, user).name),
         roles=get_role_names(user),
